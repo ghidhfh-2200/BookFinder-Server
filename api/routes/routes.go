@@ -2,11 +2,10 @@ package routes
 
 import (
 	"fmt"
-	"io"
 	"io/fs"
 	"net/http"
+	"path"
 	"strings"
-	"time"
 
 	"bookfinder-backend/api/handlers"
 	"bookfinder-backend/api/handlers/ban"
@@ -21,29 +20,19 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// getStaticFSHandler 从嵌入的文件系统中返回单个静态文件
-func getStaticFSHandler(staticFS fs.FS, path string) gin.HandlerFunc {
+// getStaticFSHandler 从嵌入的文件系统中返回单个静态文件。
+// 压缩协商与缓存头见 serveStatic（static.go）。
+func getStaticFSHandler(staticFS fs.FS, name string) gin.HandlerFunc {
+	// 入口文件每次校验，其余带 hash 或极少变动，可长期缓存
+	cacheControl := cacheImmutable
+	if name == "index.html" {
+		cacheControl = cacheRevalidate
+	}
+
 	return func(c *gin.Context) {
-		content, err := staticFS.Open(path)
-		if err != nil {
+		if !serveStatic(c, staticFS, name, cacheControl) {
 			c.String(http.StatusNotFound, "Not found")
-			return
 		}
-		defer content.Close()
-
-		if path == "index.html" {
-			// index.html 需要每次校验，以便加载新的带 hash 资源
-			c.Header("Cache-Control", "no-cache")
-		} else {
-			c.Header("Cache-Control", "public, max-age=86400")
-		}
-
-		if seeker, ok := content.(io.ReadSeeker); ok {
-			http.ServeContent(c.Writer, c.Request, path, time.Time{}, seeker)
-			return
-		}
-
-		c.String(http.StatusInternalServerError, "Internal server error")
 	}
 }
 
@@ -217,20 +206,37 @@ func SetupRouter(staticFS fs.FS) (*gin.Engine, error) {
 		middlewares.PermissionMiddleware(utils.PermissionIPBanManagement), handlers.ReviewAppeal)
 
 	// ========== 静态文件服务 ==========
+	// 产物根目录下的文件。逐个注册而不是通配整个根路径：通配会与 /api 及
+	// 前端路由抢匹配，而这里只需要放出 public/ 下确实存在的那几个。
+	//
+	// 名单要与 frontend/public/ 的内容一致：列了不存在的文件只是白注册一条
+	// 返回 404 的路由，而漏掉真实存在的文件更糟——请求会落到 NoRoute，
+	// 拿到一份 index.html。浏览器把 HTML 当图标解析，图标就一直出不来。
 	rootStaticFiles := []string{
-		"robots.txt",
-		"vite.svg",
+		"favicon.svg",
 	}
 	for _, file := range rootStaticFiles {
 		r.GET("/"+file, getStaticFSHandler(staticFS, file))
+		// HEAD 与 GET 同一处理：serveStatic 会在 HEAD 时只发响应头
+		r.HEAD("/"+file, getStaticFSHandler(staticFS, file))
 	}
 
 	// 静态资源服务（带 hash，可长期缓存）
 	assetsFS, _ := fs.Sub(staticFS, "assets")
-	r.GET("/assets/*filepath", func(c *gin.Context) {
-		c.Header("Cache-Control", "public, max-age=604800, immutable")
-		http.StripPrefix("/assets/", http.FileServer(http.FS(assetsFS))).ServeHTTP(c.Writer, c.Request)
-	})
+	assetHandler := func(c *gin.Context) {
+		// 去掉 Gin 通配参数的前导斜杠，并挡掉 ../ 之类的路径穿越
+		name := path.Clean(strings.TrimPrefix(c.Param("filepath"), "/"))
+		if name == "." || name == ".." || strings.HasPrefix(name, "../") {
+			c.String(http.StatusNotFound, "Not found")
+			return
+		}
+
+		if !serveStatic(c, assetsFS, name, cacheImmutable) {
+			c.String(http.StatusNotFound, "Not found")
+		}
+	}
+	r.GET("/assets/*filepath", assetHandler)
+	r.HEAD("/assets/*filepath", assetHandler)
 
 	// 其他请求：API 返回 404 JSON，其余交给前端入口
 	r.NoRoute(func(c *gin.Context) {

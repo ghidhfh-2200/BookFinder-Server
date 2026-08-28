@@ -17,6 +17,7 @@
 - [告警外发](#告警外发)
 - [接口一览](#接口一览)
 - [部署](#部署)
+- [静态资源压缩](#静态资源压缩)
 - [开发](#开发)
 
 ## 它解决什么问题
@@ -316,6 +317,10 @@ CGO_ENABLED=1 GOOS=linux GOARCH=amd64 \
   go build -trimpath -ldflags="-s -w" -o build/bookfinder-linux-amd64 .
 ```
 
+**两步的顺序不能反。** `go:embed` 在编译期从磁盘读 `frontend/dist`，而 `dist`
+在 `.gitignore` 里：全新 clone 后直接 `go build` 会嵌入一个空目录，编译通过、
+退出码 0，运行起来却是白屏。同理，改了前端不重新构建就编译，嵌进去的是旧产物。
+
 验证产物不是空壳：
 
 ```bash
@@ -345,10 +350,16 @@ data/
 ```nginx
 server {
     listen 443 ssl;
+    http2 on;                  # 首屏要取十几个资源，HTTP/1.1 下会排队
     server_name library.example.com;
 
     ssl_certificate     /etc/nginx/ssl/example.com.cer;
     ssl_certificate_key /etc/nginx/ssl/example.com.key;
+
+    # 静态资源由本服务自己发预压缩产物（见「静态资源压缩」），
+    # 这里不要再开 gzip：Nginx 不会压已带 Content-Encoding 的响应，
+    # 开了只是白占 CPU 去压 API 的 JSON。
+    gzip off;
 
     location / {
         proxy_pass http://127.0.0.1:8080;
@@ -359,6 +370,10 @@ server {
 }
 ```
 
+反代必须原样转发 `Accept-Encoding` 与 `Content-Encoding`（Nginx 默认如此，
+无需额外配置）。若中间还有一层 CDN，确认它按 `Vary: Accept-Encoding` 分别缓存——
+本服务已带上该响应头，否则只支持 gzip 的客户端可能收到 brotli 响应。
+
 两处都要做，缺一不可：
 
 1. Nginx 里的 `proxy_set_header X-Forwarded-For`（只写 `proxy_pass` 不会自动转发）
@@ -368,6 +383,27 @@ server {
 所有人被拦），封禁也无法定位到具体访问者。配错时日志里会有明确的 ERROR 提示。
 
 `proxy_pass` 末尾**不要**加斜杠——根路径部署不需要路径重写。
+
+### 静态资源压缩
+
+前端产物在构建期就压好两份（brotli 与 gzip），随原文件一起内嵌进二进制；
+请求到来时按 `Accept-Encoding` 挑一份发出，不在请求路径上做压缩。
+
+首屏因此从 1.2 MB 降到约 340 KB：
+
+| | 首屏传输量 |
+|---|---|
+| 不压缩 | 1183 KB |
+| gzip | 389 KB |
+| brotli | 335 KB |
+
+压缩放在构建期而不是请求时，有两个原因：内嵌产物的内容此后再不改变，
+每个请求现压一遍是把同一份结果算无数次；而离线压缩才用得起 brotli 的最高档
+q11——那一档压首屏最大的那个 chunk 要一秒多，不可能放进请求路径。
+
+由 `frontend/precompress.js`（Vite 插件，只用 `node:zlib`，无额外依赖）生成，
+服务端的编码协商在 `api/routes/static.go`。**压缩产物缺失时会回落到原文件**，
+故 `npm run build` 没跑过也只是慢、不会坏。
 
 ### 定期清理
 
@@ -380,15 +416,14 @@ server {
 ```bash
 # 后端
 go run . -debug          # 调试模式，日志同时打到控制台
-go test ./...            # 全部测试
 go vet ./...
 
 # 前端（开发服务器，代理到 :8080）
 cd frontend && npm run dev
 ```
 
-部分测试需要本机 Redis（`services/dashboard`）与 MySQL（`models`）；
-连不上时会自动跳过而非失败。
+开发模式下前端由 Vite 提供，不走内嵌产物，也不做预压缩——那两者都只在
+`npm run build` 时生效。
 
 ### 代码组织
 
