@@ -34,43 +34,38 @@ export default function FieldTable({
   // 用 HTML5 原生拖放实现重排，不引入拖拽库：这里只是单列表纵向换位，原生 API 足够。
   // 只有手柄能发起拖拽（draggable 由 handleProps 挂到手柄上），
   // 整行 draggable 会让行内输入框无法选中文字。
-  const row = ({ 'data-row-key': rowKey, ...props }) => {
-    // rowKey 即行序号（见下方 rowKey 定义）。取不到序号时按普通行渲染，
-    // 不做拖放处理——表头等非数据行也会走到这里。
-    const index = Number(rowKey)
-    if (!Number.isInteger(index)) {
-      return <tr {...props} />
-    }
-
+  //
+  // 拖放事件经 onRow 挂到行上，而不是用 components.body.row 换掉行组件。
+  // 那种写法必须在组件内定义一个 row 函数（它要闭包 dragIndex 等状态），
+  // 于是每次渲染都是一个新的函数引用——React 按引用判断组件类型，
+  // 引用变了就把整行卸载重建，行内输入框每敲一个字符就失去焦点。
+  // onRow 返回的是一组 props 而非组件类型，逐次变化只会更新属性。
+  const onRow = (_record, index) => {
     const isDropTarget = dropIndex === index && dragIndex !== null && dragIndex !== index
     // 提示线画在上边还是下边，取决于从哪个方向拖来
     const edge = dragIndex !== null && dragIndex < index ? 'borderBottom' : 'borderTop'
 
-    return (
-      <tr
-        {...props}
-        onDragOver={(e) => {
-          if (dragIndex === null) return
-          e.preventDefault()
-          e.dataTransfer.dropEffect = 'move'
-          setDropIndex(index)
-        }}
-        onDrop={(e) => {
-          if (dragIndex === null) return
-          e.preventDefault()
-          if (dragIndex !== index) {
-            onMove(dragIndex, index)
-          }
-          setDragIndex(null)
-          setDropIndex(null)
-        }}
-        style={{
-          ...props.style,
-          opacity: dragIndex === index ? 0.4 : 1,
-          ...(isDropTarget ? { [edge]: '2px solid #2563eb' } : null),
-        }}
-      />
-    )
+    return {
+      onDragOver: (e) => {
+        if (dragIndex === null) return
+        e.preventDefault()
+        e.dataTransfer.dropEffect = 'move'
+        setDropIndex(index)
+      },
+      onDrop: (e) => {
+        if (dragIndex === null) return
+        e.preventDefault()
+        if (dragIndex !== index) {
+          onMove(dragIndex, index)
+        }
+        setDragIndex(null)
+        setDropIndex(null)
+      },
+      style: {
+        opacity: dragIndex === index ? 0.4 : 1,
+        ...(isDropTarget ? { [edge]: '2px solid #2563eb' } : null),
+      },
+    }
   }
 
   // handleProps 拖拽手柄的事件，挂在手柄图标上
@@ -253,7 +248,7 @@ export default function FieldTable({
       dataSource={fields}
       pagination={false}
       scroll={{ x: 'max-content' }}
-      components={{ body: { row } }}
+      onRow={onRow}
     />
   )
 }
