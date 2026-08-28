@@ -1,0 +1,20 @@
+# 环境配置（含数据库密码，不要提交）
+.env
+
+# 运行时数据
+/data/
+
+# 编译产物
+*.exe
+bookfinder-backend
+# 交叉编译产物目录（Linux 二进制约 30MB，不入版本库）
+/build/
+
+# 前端
+frontend/node_modules/
+frontend/dist/*
+!frontend/dist/index.html
+
+# IDE
+.idea/
+.vscode/

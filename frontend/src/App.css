@@ -1,0 +1,120 @@
+/* 只放 antd token 表达不了的东西。
+   组件外观一律在 theme.js 里用 token 配置，不在此覆盖 .ant-* 内部类名：
+   那样会与 antd 实现耦合，升级即失效，也是此前界面偏灰、不像 antd 的原因。 */
+
+::selection {
+  background: #2563eb;
+  color: #ffffff;
+}
+
+/* 页面头部：标题与操作区分列，窄屏换行 */
+.page-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.page-header__heading {
+  min-width: 0;
+}
+
+.page-header__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* 表格上方的独立工具条 */
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.toolbar__group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 侧边栏纵向排布，底部信息推到最下 */
+.app-sider__inner {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.app-sider__brand {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 10px;
+  height: 60px;
+  padding: 0 16px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+/* 菜单项多到装不下时，只让菜单区滚动，品牌与底部信息保持可见 */
+.app-sider__menu {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.app-sider__footer {
+  flex-shrink: 0;
+  padding: 12px;
+}
+
+/* 滚动条，Windows 下默认样式过于粗重 */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #d4d4d8 transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: #d4d4d8;
+  background-clip: content-box;
+  border: 2px solid transparent;
+  border-radius: 8px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: #a1a1aa;
+  background-clip: content-box;
+}
+
+/* 移动端 */
+@media (max-width: 768px) {
+  body {
+    -webkit-tap-highlight-color: transparent;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
+  .page-header__actions,
+  .toolbar {
+    width: 100%;
+  }
+}
+
+/* 打印 */
+@media print {
+  .ant-layout-sider,
+  .ant-pagination {
+    display: none !important;
+  }
+}
