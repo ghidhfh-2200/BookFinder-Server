@@ -1,0 +1,26 @@
+{
+  "fields": [
+    {
+      "name": "FullName",
+      "label": "全称",
+      "type": "string",
+      "required": true,
+      "summary": true,
+      "role": "searchname"
+    },
+    {
+      "name": "ShortName",
+      "label": "简称",
+      "type": "string",
+      "required": false,
+      "summary": true
+    },
+    {
+      "name": "WebSite",
+      "label": "网站",
+      "type": "string",
+      "required": false,
+      "summary": false
+    }
+  ]
+}

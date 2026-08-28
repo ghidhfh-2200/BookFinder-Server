@@ -1,0 +1,50 @@
+{
+  "enabled": true,
+  "limits": {
+    "appeal": {
+      "daily": 10,
+      "burst": 3,
+      "burst_window_seconds": 300
+    },
+    "auth": {
+      "daily": 20,
+      "burst": 5,
+      "burst_window_seconds": 300
+    },
+    "create": {
+      "daily": 30,
+      "burst": 5,
+      "burst_window_seconds": 60
+    },
+    "read": {
+      "daily": 300,
+      "burst": 5,
+      "burst_window_seconds": 60
+    },
+    "report": {
+      "daily": 10,
+      "burst": 2,
+      "burst_window_seconds": 60
+    },
+    "update": {
+      "daily": 10,
+      "burst": 2,
+      "burst_window_seconds": 60
+    }
+  },
+  "probation": {
+    "daily": 20,
+    "burst": 5,
+    "burst_window_seconds": 60
+  },
+  "auto_ban": {
+    "enabled": true,
+    "daily_overflow_multiplier": 3,
+    "burst_violations": 5,
+    "duplicate_reports": 10,
+    "probation_overflow_multiplier": 5,
+    "network_overflow_multiplier": 5,
+    "network_top_visitors": 5,
+    "network_concentration_percent": 80
+  }
+}
