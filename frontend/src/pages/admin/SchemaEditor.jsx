@@ -113,15 +113,23 @@ export default function SchemaEditor() {
         }
       />
 
-      <Space
-        direction="vertical"
-        size={16}
-        style={{ width: '100%', flex: 1, minHeight: 0, display: 'flex' }}
+      {/* 不用 Space：它把每个子节点包进一层没有 flex 的 div，卡片的 flex: 1
+          会被那一层拦住，高度传不到 JSON 编辑器里。直接用 flex 列。 */}
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 16,
+          width: '100%',
+          flex: 1,
+          minHeight: 0,
+        }}
       >
         {removed.length > 0 && added.length > 0 && (
           <Alert
             type="error"
             showIcon
+            style={{ flexShrink: 0 }}
             message={
               <>
                 不能在同一次提交里既删除 <Tag>{removed.join('、')}</Tag> 又新增{' '}
@@ -135,6 +143,7 @@ export default function SchemaEditor() {
           <Alert
             type="warning"
             showIcon
+            style={{ flexShrink: 0 }}
             message={
               <>
                 保存后将清除 <Tag>{removed.join('、')}</Tag> 的已有数据，无法恢复
@@ -143,12 +152,20 @@ export default function SchemaEditor() {
           />
         )}
 
-        {/* 字段多时让卡片内容区自己滚动，页面不产生滚动条 */}
+        {/* 表格模式字段多时由卡片内容区滚动；JSON 模式改由输入框自己滚动，
+            故此处不设 overflow，交给各自的内容决定。 */}
         <Card
           variant="borderless"
           style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}
           styles={{
-            body: { paddingTop: 16, flex: 1, minHeight: 0, overflowY: 'auto' },
+            body: {
+              paddingTop: 16,
+              flex: 1,
+              minHeight: 0,
+              display: 'flex',
+              flexDirection: 'column',
+              overflowY: mode === 'table' ? 'auto' : 'hidden',
+            },
           }}
           title={
             <Segmented
@@ -186,7 +203,7 @@ export default function SchemaEditor() {
             <JsonEditor fields={draft} onChange={setDraft} />
           )}
         </Card>
-      </Space>
+      </div>
     </div>
   )
 }

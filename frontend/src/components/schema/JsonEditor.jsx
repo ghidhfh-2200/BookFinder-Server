@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Alert, Input, Space, Typography } from 'antd'
+import { Alert, Input, Typography } from 'antd'
 
 // serialize 注册表转 JSON 原文
 const serialize = (fields) => JSON.stringify({ fields }, null, 2)
@@ -37,24 +37,55 @@ export default function JsonEditor({ fields, onChange }) {
   }
 
   return (
-    <Space direction="vertical" size={12} style={{ width: '100%' }}>
-      <Typography.Text type="secondary">
+    // 不用 Space 布局：它把每个子节点包进一层没有 flex 的 div，
+    // 高度链在那一层就断了，输入框因此拿不到可用高度。
+    // 这里直接用 flex 列，并让输入框独占剩余空间。
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 12,
+        width: '100%',
+        flex: 1,
+        minHeight: 0,
+      }}
+    >
+      <Typography.Text type="secondary" style={{ flexShrink: 0 }}>
         直接编辑注册表原文。格式合法时会同步到「字段列表」，保存前仍由后端校验。
       </Typography.Text>
 
-      {error && <Alert type="error" showIcon message="JSON 格式有误" description={error} />}
+      {error && (
+        <Alert
+          type="error"
+          showIcon
+          message="JSON 格式有误"
+          description={error}
+          style={{ flexShrink: 0 }}
+        />
+      )}
 
+      {/* 不用 autoSize：它按内容长高、到 maxRows 就停，超出的部分既不显示
+          也不滚动（字段一多就看不到后半截）。改为撑满剩余高度并自己滚动，
+          内容再长也能翻到底，且编辑区高度不随输入跳动。
+
+          root 与 textarea 分开指定：antd 可能在两者之间包一层（计数、清除按钮
+          等场景），只设外层的话高度传不到真正的 textarea 上。 */}
       <Input.TextArea
         value={text}
         onChange={(e) => handleChange(e.target.value)}
-        autoSize={{ minRows: 16, maxRows: 32 }}
         spellCheck={false}
-        style={{
-          fontFamily: "'SF Mono', 'Cascadia Code', Consolas, 'Courier New', monospace",
-          fontSize: 13,
-          lineHeight: 1.7,
+        styles={{
+          root: { flex: 1, minHeight: 240, display: 'flex' },
+          textarea: {
+            flex: 1,
+            resize: 'none',
+            overflowY: 'auto',
+            fontFamily: "'SF Mono', 'Cascadia Code', Consolas, 'Courier New', monospace",
+            fontSize: 13,
+            lineHeight: 1.7,
+          },
         }}
       />
-    </Space>
+    </div>
   )
 }
