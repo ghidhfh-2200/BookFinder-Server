@@ -205,6 +205,16 @@ func SetupRouter(staticFS fs.FS) (*gin.Engine, error) {
 	adminAPI.PUT("/appeals/:id",
 		middlewares.PermissionMiddleware(utils.PermissionIPBanManagement), handlers.ReviewAppeal)
 
+	// ========== 调试专用 API ==========
+	// 只在 -debug 下注册：能改签名密钥就能伪造任意设备标识，进而污染他人的封禁。
+	// 仍要管理员权限——调试模式常跑在手机连得到的机器上。
+	if logger.IsDebug() {
+		adminAPI.POST("/dev/reload-client-sign",
+			middlewares.PermissionMiddleware(utils.PermissionSystemManagement),
+			handlers.ReloadClientSignSecret)
+		logger.Warnf("调试模式：已启用签名密钥重载接口 POST /api/admin/dev/reload-client-sign")
+	}
+
 	// ========== 静态文件服务 ==========
 	// 产物根目录下的文件。逐个注册而不是通配整个根路径：通配会与 /api 及
 	// 前端路由抢匹配，而这里只需要放出 public/ 下确实存在的那几个。

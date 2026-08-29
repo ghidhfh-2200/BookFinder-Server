@@ -258,6 +258,22 @@ func Get() *Config {
 	return config
 }
 
+// ReloadAppHMACSecret 从 .env 重新读取 APP_HMAC_SECRET 并返回新值，
+// 供调试模式下的重载接口使用（见 handlers.ReloadClientSignSecret）。
+//
+// 只返回新值，不改写 config：该结构体启动后由各处并发读取，就地改是数据竞争。
+// 密钥的活值在中间件里（那边用原子读写），config 中的只是启动快照。
+// 也不重建整个 Config：其余各项已用于建连接、构造 http.Server，改了也不生效。
+//
+// Overload 而非 Load：后者不覆盖已存在的环境变量，不覆盖就永远读回旧值。
+func ReloadAppHMACSecret() (string, error) {
+	if err := godotenv.Overload(); err != nil {
+		return "", fmt.Errorf("重新读取 .env 失败: %w", err)
+	}
+
+	return os.Getenv("APP_HMAC_SECRET"), nil
+}
+
 // DSN 生成 MySQL 连接串
 func (d DatabaseConfig) DSN() string {
 	return fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=utf8mb4&parseTime=True&loc=Local",

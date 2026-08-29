@@ -52,6 +52,9 @@ const (
 	// ActionSchemaUpdate 变更字段注册表
 	ActionSchemaUpdate = "schema_update"
 
+	// ActionClientSignReload 重载安卓客户端签名密钥（仅调试模式可触发）
+	ActionClientSignReload = "client_sign_reload"
+
 	// ActionIPBan 管理员封禁 IP
 	ActionIPBan = "ip_ban"
 	// ActionIPBanAuto 规则触发的自动封禁

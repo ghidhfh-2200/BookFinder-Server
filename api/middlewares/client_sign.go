@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"sync/atomic"
 	"time"
 
 	"bookfinder-backend/database"
@@ -45,13 +46,24 @@ const (
 	maxSignedBodyBytes = 64 << 10
 )
 
-// signSecret 客户端签名密钥，为空表示该层关闭
-var signSecret []byte
+// signSecret 客户端签名密钥，为空表示该层关闭。
+//
+// 原子读写而非裸变量：调试模式下密钥可在运行中重载，写入与各请求协程的读取
+// 并发发生。存 *[]byte 因为 atomic.Pointer 要单指针宽度的值，切片是三个字。
+var signSecret atomic.Pointer[[]byte]
 
 // SetClientSignSecret 设置客户端签名密钥。
 // 留空则不校验签名，此时一律不采信客户端上报的设备标识。
 func SetClientSignSecret(secret []byte) {
-	signSecret = secret
+	signSecret.Store(&secret)
+}
+
+// currentSignSecret 取当前密钥，未设置时返回 nil
+func currentSignSecret() []byte {
+	if secret := signSecret.Load(); secret != nil {
+		return *secret
+	}
+	return nil
 }
 
 // ClientSignMiddleware 校验安卓客户端的请求签名，通过后才采信其上报的设备标识。
@@ -68,7 +80,10 @@ func SetClientSignSecret(secret []byte) {
 // 浏览器端的身份依据是令牌与 IP。
 func ClientSignMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if len(signSecret) == 0 {
+		// 密钥一次取定，后续校验都用这一份：中途重载会变成
+		// 「开关判断用旧密钥、算签名用新密钥」，比出一个两边都不对应的结果
+		secret := currentSignSecret()
+		if len(secret) == 0 {
 			c.Next()
 			return
 		}
@@ -97,7 +112,7 @@ func ClientSignMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		if err := verifySignature(c, device, sign, body); err != nil {
+		if err := verifySignature(c, secret, device, sign, body); err != nil {
 			// 防重放设施不可用是我方故障，不是伪造的证据：此时降级为
 			// 「不采信设备标识」而非拒绝服务。否则打掉 Redis 就能让整个安卓端
 			// 不可用——那把一个可用性问题变成了更严重的可用性问题。
@@ -138,8 +153,9 @@ func isAntiReplayUnavailable(err error) bool {
 	return errors.Is(err, errAntiReplayUnavailable)
 }
 
-// verifySignature 校验时间戳、nonce 与签名
-func verifySignature(c *gin.Context, device, sign string, body []byte) error {
+// verifySignature 校验时间戳、nonce 与签名。
+// 密钥由调用方取定后传入，不在此处重读，见 ClientSignMiddleware。
+func verifySignature(c *gin.Context, secret []byte, device, sign string, body []byte) error {
 	rawTimestamp := c.GetHeader(TimestampHeaderName)
 	nonce := c.GetHeader(NonceHeaderName)
 
@@ -163,7 +179,7 @@ func verifySignature(c *gin.Context, device, sign string, body []byte) error {
 		return fmt.Errorf("时间戳超出允许偏差")
 	}
 
-	expected := computeSignature(c.Request.Method, c.Request.URL.Path,
+	expected := computeSignature(secret, c.Request.Method, c.Request.URL.Path,
 		rawTimestamp, nonce, device, body)
 
 	// 恒定时间比较，避免按字节逐位试探签名
@@ -204,10 +220,10 @@ func consumeNonce(c *gin.Context, nonce string) error {
 //
 // 方法与路径入签，避免把一个读请求的签名挪用到写请求上；
 // 请求体入签，避免在签名不变的前提下改动内容。
-func computeSignature(method, path, timestamp, nonce, device string, body []byte) string {
+func computeSignature(secret []byte, method, path, timestamp, nonce, device string, body []byte) string {
 	bodyHash := sha256.Sum256(body)
 
-	mac := hmac.New(sha256.New, signSecret)
+	mac := hmac.New(sha256.New, secret)
 	for _, part := range []string{
 		method, path, timestamp, nonce, device, hex.EncodeToString(bodyHash[:]),
 	} {
