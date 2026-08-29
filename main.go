@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -48,7 +49,11 @@ func main() {
 
 	// 加载图书馆 Info 字段注册表。读写 Info 都要按它对齐，故须在数据库初始化前就位。
 	// 日志库也在 MySQL 里，此前的日志都回落到 stderr。
-	if err := schema.Load(cfg.Library.SchemaPath); err != nil {
+	//
+	// 加载会顺带补齐缺失的内置字段并回写文件，故版本升级新增内置字段时，
+	// 停服换二进制重启即可，不必手改 JSON。补齐了哪些留到日志就绪后再报。
+	restoredFields, err := schema.Load(cfg.Library.SchemaPath)
+	if err != nil {
 		fmt.Printf("图书馆字段注册表加载失败: %v\n", err)
 		os.Exit(1)
 	}
@@ -83,6 +88,12 @@ func main() {
 	logger.Infof("系统配置加载完成")
 	logger.Infof("图书馆字段注册表加载完成，共 %d 个字段: %s",
 		len(schema.Fields()), cfg.Library.SchemaPath)
+	// 补齐记为 WARN：它意味着配置文件缺了内置字段（升级带来的新字段，
+	// 或被手工删掉），已自动补回并回写，但值得管理员知道注册表变过
+	if len(restoredFields) > 0 {
+		logger.Warnf("注册表缺少内置字段 %s，已按内置声明补齐并回写配置文件；"+
+			"已有记录的该字段将补为空值", strings.Join(restoredFields, "、"))
+	}
 	logger.Infof("图书馆数据库初始化完成，日志系统已就绪")
 
 	// 加载限流与自动封禁规则

@@ -11,17 +11,29 @@ const TYPE_LABELS = {
   array: '数组',
 }
 
+// ROLE_LABELS 角色的中文名与说明。角色取值来自后端（role_fields / reserved_fields），
+// 这里只负责把它显示成人话；未收录的角色回落到显示原始标识符。
+const ROLE_LABELS = {
+  searchname: { text: '记录名', hint: '图书馆的记录名，关键字搜索匹配的就是它' },
+  website: { text: '网站', hint: '图书馆的网站地址，客户端据此提供打开链接的入口' },
+}
+
 // FieldTable 注册表的可视化编辑表格。
 // 字段名是标识符，只能增删不能改，故已存在的字段名只读；显示名与类型可改。
+//
+// 内置字段（reservedFields）另有锁定：不可删除、类型不可改，必填与摘要
+// 是否锁定各字段不同。锁定项由后端给出，前端不按角色自己推断。
 export default function FieldTable({
   fields,
   types,
-  searchNameField,
+  reservedFields = [],
   savedNames,
   onChange,
   onRemove,
   onMove,
 }) {
+  // reservedBy 字段名到内置声明的映射，渲染时按行查表
+  const reservedBy = new Map(reservedFields.map((field) => [field.name, field]))
   // dragIndex 正在拖动的行，dropIndex 悬停目标，用于画插入位置提示线
   const [dragIndex, setDragIndex] = useState(null)
   const [dropIndex, setDropIndex] = useState(null)
@@ -143,8 +155,8 @@ export default function FieldTable({
       render: (type, record, index) => (
         <Select
           value={type}
-          // 记录名固定为文本类型
-          disabled={record.role === 'searchname'}
+          // 内置字段的类型锁定：后端按角色读它的值，换了类型就读不出来
+          disabled={reservedBy.has(record.name)}
           onChange={(value) => update(index, { type: value })}
           style={{ width: '100%' }}
           options={types.map((value) => ({ value, label: TYPE_LABELS[value] ?? value }))}
@@ -160,8 +172,7 @@ export default function FieldTable({
         <Switch
           size="small"
           checked={required}
-          // 记录名必须必填
-          disabled={record.role === 'searchname'}
+          disabled={reservedBy.get(record.name)?.lock_required ?? false}
           onChange={(checked) => update(index, { required: checked })}
         />
       ),
@@ -179,8 +190,8 @@ export default function FieldTable({
         <Switch
           size="small"
           checked={summary}
-          // 记录名是搜索匹配的字段，藏进详情会让表格只剩 ID
-          disabled={record.role === 'searchname'}
+          // 记录名是搜索匹配的字段，藏进详情会让表格只剩 ID（由后端的锁定项决定）
+          disabled={reservedBy.get(record.name)?.lock_summary ?? false}
           onChange={(checked) => update(index, { summary: checked })}
         />
       ),
@@ -189,24 +200,30 @@ export default function FieldTable({
       title: '角色',
       dataIndex: 'role',
       width: 110,
-      render: (role) =>
-        role === 'searchname' ? (
-          <Tooltip title="图书馆的记录名，关键字搜索匹配的就是它。不可删除。">
+      // 角色由字段名决定，不是一项可改的设置，故只显示不可编辑
+      render: (role) => {
+        if (!role) {
+          return <span style={{ color: '#a1a1aa' }}>-</span>
+        }
+
+        const { text, hint } = ROLE_LABELS[role] ?? { text: role, hint: '' }
+
+        return (
+          <Tooltip title={hint ? `${hint}。该字段不可删除，类型不可改。` : ''}>
             <Tag bordered={false} color="blue">
-              记录名
+              {text}
             </Tag>
           </Tooltip>
-        ) : (
-          <span style={{ color: '#a1a1aa' }}>-</span>
-        ),
+        )
+      },
     },
     {
       title: '',
       key: 'action',
       width: 52,
       render: (_, record, index) => {
-        // 记录名承担搜索职责，不可删除
-        if (record.name === searchNameField) {
+        // 内置字段承担着按角色定位的职责，删掉会让对应功能失去着落
+        if (reservedBy.has(record.name)) {
           return null
         }
 

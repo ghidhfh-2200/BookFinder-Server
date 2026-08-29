@@ -50,6 +50,11 @@ export function useLibrarySchema() {
     // 记录名」的规则——前端再筛一遍就会与后端各错一次。
     summaryFields: schema?.summary_fields ?? [],
     searchNameField: schema?.search_name_field ?? '',
+    // reservedFields 内置字段及其锁定项。哪几项锁定由后端的内置字段表决定，
+    // 前端不按角色自己推断——那等于把同一套规则再写一遍。
+    reservedFields: schema?.reserved_fields ?? [],
+    // roleFields 角色到字段名的映射，按角色定位字段时用它，不硬编码键名
+    roleFields: schema?.role_fields ?? {},
     types: schema?.types ?? [],
     statuses: schema?.statuses ?? [],
     // ready 表示注册表已就绪，可以据此渲染表格

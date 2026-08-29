@@ -14,7 +14,7 @@ import { PAGE_STYLE } from '../../hooks/useFillHeight'
 // 并自动补全已有记录：新增字段补空值，删除字段的数据一并清除。
 export default function SchemaEditor() {
   const { message } = App.useApp()
-  const { fields, types, searchNameField, loading, reload } = useLibrarySchema()
+  const { fields, types, reservedFields, loading, reload } = useLibrarySchema()
 
   // 草稿仅在有本地改动时存在，否则直接呈现后端的字段，
   // 这样重新加载注册表后无需 effect 同步即可反映最新值
@@ -190,7 +190,7 @@ export default function SchemaEditor() {
               <FieldTable
                 fields={draft}
                 types={types}
-                searchNameField={searchNameField}
+                reservedFields={reservedFields}
                 savedNames={savedNames}
                 onChange={setDraft}
                 onRemove={removeField}

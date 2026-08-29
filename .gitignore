@@ -10,6 +10,9 @@ bookfinder-backend
 # 交叉编译产物目录（Linux 二进制约 30MB，不入版本库）
 /build/
 
+# 本地构建脚本（WSL 路径与发行版名是本机的，不通用）
+/build-linux.ps1
+
 # 前端
 frontend/node_modules/
 frontend/dist/*

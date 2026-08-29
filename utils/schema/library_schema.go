@@ -21,42 +21,77 @@ var (
 	path string
 )
 
-// Load 从 JSON 配置文件加载 Info 字段注册表
-func Load(file string) error {
+// Load 从 JSON 配置文件加载 Info 字段注册表。
+//
+// 加载即校正：内置字段（types.ReservedFields）缺了就按声明补齐，形状不对就改回去，
+// 角色一律按字段名重新推导。校正结果立即回写文件，故新增一个内置字段的部署流程是
+// 「停服、换二进制、重启」——不必手改 JSON，也不必碰数据库：库里已有记录的该字段
+// 由 Normalize 在读写时补为空值。
+//
+// 返回被补齐的内置字段名，供调用方在日志系统就绪后留痕。
+func Load(file string) ([]string, error) {
 	raw, err := os.ReadFile(file)
 	if err != nil {
-		return fmt.Errorf("failed to read library schema %q: %w", file, err)
+		return nil, fmt.Errorf("failed to read library schema %q: %w", file, err)
 	}
 
 	var parsed types.LibrarySchema
 	if err := json.Unmarshal(raw, &parsed); err != nil {
-		return fmt.Errorf("failed to parse library schema %q: %w", file, err)
+		return nil, fmt.Errorf("failed to parse library schema %q: %w", file, err)
 	}
 
-	if err := Validate(parsed.Fields); err != nil {
-		return fmt.Errorf("invalid library schema %q: %w", file, err)
+	reconciled, restored := types.ReconcileFields(parsed.Fields)
+
+	if err := Validate(reconciled); err != nil {
+		return nil, fmt.Errorf("invalid library schema %q: %w", file, err)
 	}
 
 	mu.Lock()
-	fields = parsed.Fields
-	index = buildIndex(parsed.Fields)
+	fields = reconciled
+	index = buildIndex(reconciled)
 	path = file
 	mu.Unlock()
 
-	return nil
+	// 文件本就与校正结果一致时不写：正常启动不该无谓地改动配置文件
+	if sameFields(parsed.Fields, reconciled) {
+		return restored, nil
+	}
+
+	// 回写失败视为致命：管理页保存注册表写的是同一个文件，
+	// 此刻不可写意味着那条路也是坏的，不如在启动时就暴露出来
+	if err := writeFile(file, reconciled); err != nil {
+		return restored, err
+	}
+
+	return restored, nil
+}
+
+// sameFields 判断两组字段声明是否完全一致。
+// InfoField 各项都是可比较的标量，故直接逐项比较。
+func sameFields(a, b []types.InfoField) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // Validate 校验一组字段声明是否自洽可用。
 // 字段名是标识符，只能增删不能改；显示名与类型可改。
+//
+// 内置字段的形状（类型、必填、摘要）由 types.ReconcileFields 校正而非在此报错：
+// 那些项管理员本就无从提交，报错只会把「已经处理好的事」变成一条挡路的错误。
+// 此处只守住校正也补不出来的东西：字段名本身合法、不重复、内置字段没被删。
 func Validate(candidates []types.InfoField) error {
 	if len(candidates) == 0 {
 		return fmt.Errorf("注册表至少要有一个字段")
 	}
 
-	var (
-		seen            = make(map[string]struct{}, len(candidates))
-		searchNameCount int
-	)
+	seen := make(map[string]struct{}, len(candidates))
 
 	for _, field := range candidates {
 		if strings.TrimSpace(field.Name) == "" {
@@ -80,31 +115,14 @@ func Validate(candidates []types.InfoField) error {
 			return fmt.Errorf("字段名 %s 重复", field.Name)
 		}
 		seen[field.Name] = struct{}{}
-
-		if field.Role == types.RoleSearchName {
-			if field.Name != types.SearchNameFieldName {
-				return fmt.Errorf("searchname 角色只能由字段 %s 承担，不能是 %s",
-					types.SearchNameFieldName, field.Name)
-			}
-			if field.Type != types.InfoTypeString {
-				return fmt.Errorf("字段 %s 作为记录名，类型必须为 string，当前为 %q", field.Name, field.Type)
-			}
-			if !field.Required {
-				return fmt.Errorf("字段 %s 作为记录名，必须为必填", field.Name)
-			}
-			// 记录名是搜索匹配的字段，也是这条记录的身份：不作为列显示，
-			// 表格就成了「一列 ID 加一堆看不出是谁的行」
-			if !field.Summary {
-				return fmt.Errorf("字段 %s 作为记录名，必须作为摘要显示在列表中", field.Name)
-			}
-			searchNameCount++
-		}
 	}
 
-	// 记录名是图书馆的身份标识，也是关键字搜索的唯一依据，故必须存在且唯一
-	if searchNameCount != 1 {
-		return fmt.Errorf("必须有且只有一个字段 %s 承担 searchname 角色，当前有 %d 个",
-			types.SearchNameFieldName, searchNameCount)
+	// 内置字段承担着后端与客户端定位用的角色，删掉哪个都会让对应功能失去着落：
+	// 少了记录名，搜索没有匹配对象（生成列也就抽不出值）
+	for _, reserved := range types.ReservedFields {
+		if _, ok := seen[reserved.Name]; !ok {
+			return fmt.Errorf("内置字段 %s 不能删除", reserved.Name)
+		}
 	}
 
 	return nil
@@ -139,17 +157,24 @@ func Field(name string) (types.InfoField, bool) {
 }
 
 // SearchNameField 返回承担 searchname 角色的字段名。
-// 注册表已校验必有且仅有一个，故此处不会为空。
+// 内置字段不可删（见 Validate），故此处不会为空。
 func SearchNameField() string {
+	return types.SearchNameFieldName
+}
+
+// RoleFields 返回角色到字段名的映射，供客户端按角色定位字段而不硬编码键名。
+// 只列注册表里实际存在的内置字段。
+func RoleFields() map[string]string {
 	mu.RLock()
 	defer mu.RUnlock()
 
+	byRole := make(map[string]string, len(types.ReservedFields))
 	for _, field := range fields {
-		if field.Role == types.RoleSearchName {
-			return field.Name
+		if field.Role != types.RoleNone {
+			byRole[string(field.Role)] = field.Name
 		}
 	}
-	return ""
+	return byRole
 }
 
 // SummaryFieldNames 返回应作为列表表格列的字段名，顺序与注册表一致。
@@ -181,13 +206,7 @@ func summaryNamesOf(candidates []types.InfoField) []string {
 		return names
 	}
 
-	for _, field := range candidates {
-		if field.Role == types.RoleSearchName {
-			return []string{field.Name}
-		}
-	}
-
-	return names
+	return []string{types.SearchNameFieldName}
 }
 
 // Normalize 按当前生效的注册表对齐 Info
@@ -231,26 +250,31 @@ func normalizeWith(byName map[string]types.InfoField, info types.LibraryInfo) ty
 
 // Commit 用新的字段声明替换当前注册表并写回配置文件。
 // 先换内存再落盘：落盘失败时回滚内存，保证内存与文件一致。
-func Commit(candidates []types.InfoField) error {
-	if err := Validate(candidates); err != nil {
-		return err
+//
+// 返回真正落定的字段：内置字段的角色与形状经 Reconcile 校正过，
+// 调用方要拿这一份去补全已有记录、回给前端，用请求原样会与文件不一致。
+func Commit(candidates []types.InfoField) ([]types.InfoField, error) {
+	reconciled, _ := types.ReconcileFields(candidates)
+
+	if err := Validate(reconciled); err != nil {
+		return nil, err
 	}
 
 	mu.Lock()
 	prevFields, prevIndex := fields, index
-	fields = candidates
-	index = buildIndex(candidates)
+	fields = reconciled
+	index = buildIndex(reconciled)
 	file := path
 	mu.Unlock()
 
-	if err := writeFile(file, candidates); err != nil {
+	if err := writeFile(file, reconciled); err != nil {
 		mu.Lock()
 		fields, index = prevFields, prevIndex
 		mu.Unlock()
-		return err
+		return nil, err
 	}
 
-	return nil
+	return reconciled, nil
 }
 
 // writeFile 原子写入注册表文件：先写临时文件再改名，避免中途失败留下半个文件

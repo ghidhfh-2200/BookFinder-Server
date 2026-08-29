@@ -26,6 +26,17 @@ type schemaResponse struct {
 	SummaryFields []string `json:"summary_fields"`
 	// SearchNameField 承担 searchname 角色的字段名，该字段不可删除
 	SearchNameField string `json:"search_name_field"`
+	// RoleFields 角色到字段名的映射，供客户端按角色定位字段而不硬编码键名。
+	//
+	// 各字段的 role 已在 Fields 里，这里再给一份反向索引，是因为按角色取字段是
+	// 客户端的常用动作（「网站那一格填了什么」），每处都自己遍历一遍容易漏掉
+	// 角色缺席的情况。
+	RoleFields map[string]string `json:"role_fields"`
+	// ReservedFields 内置字段及其锁定项，前端据此禁用对应的控件。
+	//
+	// 由后端给出而非前端按角色自己判断：哪几项锁定是内置字段表说了算
+	// （记录名强制必填与摘要，网站两者都不强制），两端各写一遍就会各错一次。
+	ReservedFields []reservedFieldInfo `json:"reserved_fields"`
 	// Types 受支持的值类型
 	Types []string `json:"types"`
 	// Statuses 受支持的字段状态取值
@@ -39,6 +50,8 @@ func GetSchema(c *gin.Context) {
 		Fields:          schema.Fields(),
 		SummaryFields:   schema.SummaryFieldNames(),
 		SearchNameField: schema.SearchNameField(),
+		RoleFields:      schema.RoleFields(),
+		ReservedFields:  reservedFieldNames(),
 		Types: []string{
 			string(types.InfoTypeString),
 			string(types.InfoTypeNumber),
@@ -63,23 +76,29 @@ func UpdateSchema(c *gin.Context) {
 		return
 	}
 
-	if err := schema.Validate(req.Fields); err != nil {
+	// 先校正再校验：角色与内置字段的形状不是管理员的输入（见 types.InfoField.Role），
+	// 请求里带错了应当被改写而非报错。校验因此只面对已经规整的声明。
+	// 缺失的内置字段这里也会补回，故删掉内置字段这一操作等同于无效，不必单独报错。
+	candidates, _ := types.ReconcileFields(req.Fields)
+
+	if err := schema.Validate(candidates); err != nil {
 		utils.ResponseError(c, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	// 字段名不可改，改名只能表现为删旧增新。此处拦住「只改名字」的误操作：
 	// 它会连带删掉该字段的历史数据，需由管理员显式删除再新增。
-	if err := checkRenames(req.Fields); err != nil {
+	if err := checkRenames(candidates); err != nil {
 		utils.ResponseError(c, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	// 被移除的字段：其过时报告一并清理，免得日后同名字段重建时继承旧计数
-	removed := removedFieldNames(req.Fields)
+	removed := removedFieldNames(candidates)
 
 	// 先落定注册表，再补全数据：补全依据的是新声明，顺序颠倒会用旧声明补错
-	if err := schema.Commit(req.Fields); err != nil {
+	committed, err := schema.Commit(candidates)
+	if err != nil {
 		utils.ResponseError(c, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -88,7 +107,7 @@ func UpdateSchema(c *gin.Context) {
 		logger.Errorf("清理已删除字段的过时报告失败: %v", err)
 	}
 
-	migrated, err := models.MigrateLibraryInfo(req.Fields)
+	migrated, err := models.MigrateLibraryInfo(committed)
 	if err != nil {
 		// 注册表已生效但数据未补全：读取时 Normalize 仍会按新声明对齐，不影响可用性，
 		// 只是库中记录暂未落盘为新形状，下次保存注册表会再试一次。
@@ -99,19 +118,45 @@ func UpdateSchema(c *gin.Context) {
 	}
 
 	// 注册表变更会改写全表数据，记为 WARN 以便筛查
-	detail := fmt.Sprintf("字段注册表已更新，共 %d 个字段，补全 %d 条记录", len(req.Fields), migrated)
+	detail := fmt.Sprintf("字段注册表已更新，共 %d 个字段，补全 %d 条记录", len(committed), migrated)
 	if len(removed) > 0 {
 		detail += "；移除字段 " + join(removed) + "（其数据与过时报告已清除）"
 	}
 	audit.Warn(c, types.ActionSchemaUpdate, detail)
 
-	// 一并回新的摘要字段：保存后前端要据此重建表格列，
-	// 少了它列还是旧的，改完摘要看不到效果
+	// 回落定后的字段与摘要字段：保存后前端要据此重建表格列与锁定状态，
+	// 回请求原样的话，内置字段被校正掉的那几项在界面上看不出来
 	utils.ResponseOK(c, gin.H{
-		"fields":         req.Fields,
+		"fields":         committed,
 		"summary_fields": schema.SummaryFieldNames(),
 		"migrated":       migrated,
 	})
+}
+
+// reservedFieldInfo 一个内置字段的锁定项。
+// 内置字段一律不可删、类型不可改，故那两项不必逐个下发；
+// 必填与摘要是否锁定则各字段不同。
+type reservedFieldInfo struct {
+	Name string `json:"name"`
+	Role string `json:"role"`
+	// LockRequired 必填不可改（该字段强制必填）
+	LockRequired bool `json:"lock_required"`
+	// LockSummary 摘要不可改（该字段强制作为列显示）
+	LockSummary bool `json:"lock_summary"`
+}
+
+// reservedFieldNames 返回内置字段及其锁定项，供前端禁用对应控件
+func reservedFieldNames() []reservedFieldInfo {
+	out := make([]reservedFieldInfo, 0, len(types.ReservedFields))
+	for _, field := range types.ReservedFields {
+		out = append(out, reservedFieldInfo{
+			Name:         field.Name,
+			Role:         string(field.Role),
+			LockRequired: field.ForceRequired,
+			LockSummary:  field.ForceSummary,
+		})
+	}
+	return out
 }
 
 // removedFieldNames 返回当前注册表中、不在新声明里的字段名

@@ -20,7 +20,8 @@
       "label": "网站",
       "type": "string",
       "required": false,
-      "summary": false
+      "summary": false,
+      "role": "website"
     }
   ]
 }

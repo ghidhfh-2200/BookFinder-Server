@@ -160,7 +160,7 @@ mkdir -p data && cp data.example/*.json data/
     { "name": "ShortName", "label": "简称", "type": "string",
       "required": false, "summary": true },
     { "name": "WebSite", "label": "网站", "type": "string",
-      "required": false, "summary": false }
+      "required": false, "summary": false, "role": "website" }
   ]
 }
 ```
@@ -172,13 +172,32 @@ mkdir -p data && cp data.example/*.json data/
 | `type` | `string` `number` `bool` `object` `array` |
 | `required` | 必填字段写入时不允许为空 |
 | `summary` | 是否作为列显示在列表里，未勾选的收进每行「详情」 |
-| `role` | `searchname` 表示这是记录名，搜索匹配的就是它 |
+| `role` | **派生值，不是设置项**，见下 |
 
 读写两侧都会按注册表规范化：未声明的字段剔除，缺失的补为对应类型的空值。
 因此增删字段只改这个文件，库里的旧记录无需人工迁移。
 
-**约束**：必须有且仅有一个字段承担 `searchname` 角色，它固定为 `FullName`，
-且必须是 `string`、必填、且作为摘要——它是记录的身份，藏进详情会让表格只剩 ID。
+### 内置字段与角色
+
+有些字段后端或客户端要按名字之外的方式定位——Android 端要打开「网站」那一格，
+不该去猜它叫 `WebSite`。这类字段登记在代码里的**内置字段表**
+（`types.ReservedFields`），各自带一个角色标识符：
+
+| 角色 | 字段名 | 锁定项 |
+|---|---|---|
+| `searchname` | `FullName` | 类型 `string`、必填、作为摘要 |
+| `website` | `WebSite` | 类型 `string` |
+
+角色**由字段名推导，不由这份 JSON 说了算**：字段名本来就是锚（MySQL 生成列写死了
+`$."FullName".value`），同一件事存两处，可被手改的那处只会漂移。文件里的 `role`
+是推导结果的副本，只为让人读文件时看出这字段的来头，手改不起作用。
+
+内置字段不可删除、类型不可改；被强制的必填与摘要在管理页里是禁用状态。
+其余各项（显示名，以及未强制的必填与摘要）照普通字段处理，随意改。
+
+**升级新增内置字段时**：停服、换二进制、重启即可。启动时注册表会自愈——缺失的内置
+字段按声明补齐并回写 JSON（记一条 WARN），库里已有记录的该字段由 Normalize 在
+读写时补为空值。不必手改配置文件，也不必碰数据库。
 
 管理页提供可视化编辑器，保存后热生效并自动补全已有记录。
 
@@ -316,6 +335,10 @@ cd frontend && npm run build && cd ..     # 前端要先构建，它会被嵌入
 CGO_ENABLED=1 GOOS=linux GOARCH=amd64 \
   go build -trimpath -ldflags="-s -w" -o build/bookfinder-linux-amd64 .
 ```
+
+在 Windows 上开发时，两步分别落在两侧：前端在 Windows 构建（vite 8 要求
+node >= 20.19，WSL 里往往更旧），Go 在 WSL 编译。这两条命令加上环境自检与产物校验，
+可以包成一个本地脚本（`build-linux.ps1`，因 WSL 发行版名与路径是本机的而不入版本库）。
 
 **两步的顺序不能反。** `go:embed` 在编译期从磁盘读 `frontend/dist`，而 `dist`
 在 `.gitignore` 里：全新 clone 后直接 `go build` 会嵌入一个空目录，编译通过、
