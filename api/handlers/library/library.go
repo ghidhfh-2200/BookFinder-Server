@@ -54,6 +54,14 @@ type libraryItem struct {
 	types.Library
 	// Reports 各字段的报告次数与当前访问者是否已报告，键为字段名
 	Reports map[string]types.FieldReportStat `json:"reports"`
+	// CanDelete 当前访问者是否可删除这条记录：管理员恒为真，
+	// 普通访问者仅对自己创建的记录为真。
+	//
+	// 由后端逐条判定后下发，而不是把 creator_key 给前端自己比：
+	// 那个哈希是身份凭据的派生值，谁都能读列表，给出去等于泄露
+	// 「哪些记录是同一个人建的」。真正的拦截在 DeleteLibrary 里，
+	// 这一项只决定按钮显不显示。
+	CanDelete bool `json:"can_delete"`
 }
 
 // withReportStats 给图书馆附上每个字段的报告统计。
@@ -82,6 +90,10 @@ func withReportStats(c *gin.Context, libraries []types.Library) ([]libraryItem, 
 		return nil, err
 	}
 
+	// 管理员可删任意记录；其余人只能删自己创建的。
+	// reporterKey 同时也是创建者标识，两者都是访问者令牌的哈希。
+	isAdmin := middlewares.IsAdmin(c)
+
 	items := make([]libraryItem, 0, len(libraries))
 	for _, library := range libraries {
 		stats := make(map[string]types.FieldReportStat, len(library.Info))
@@ -95,7 +107,11 @@ func withReportStats(c *gin.Context, libraries []types.Library) ([]libraryItem, 
 				Suspected: !mine && sameOrigin[library.ID][name],
 			}
 		}
-		items = append(items, libraryItem{Library: library, Reports: stats})
+		items = append(items, libraryItem{
+			Library:   library,
+			Reports:   stats,
+			CanDelete: isAdmin || ownedBy(library, reporterKey),
+		})
 	}
 
 	return items, nil
@@ -138,6 +154,11 @@ func CreateLibrary(c *gin.Context) {
 		utils.ResponseError(c, http.StatusBadRequest, err.Error())
 		return
 	}
+
+	// 记下创建者，供其日后删除自己创建的记录。
+	// 只从令牌推出，不受请求体影响（CreatorKey 带 json:"-"，绑不进来）——
+	// 否则填上别人的哈希即可冒名。取不到令牌时留空，该记录只有管理员能删。
+	library.CreatorKey, _ = middlewares.GetVisitorKeyFromContext(c)
 
 	if err := models.CreateLibrary(&library); err != nil {
 		utils.ResponseError(c, http.StatusInternalServerError, err.Error())
@@ -215,7 +236,11 @@ func UpdateLibrary(c *gin.Context) {
 	utils.ResponseSuccessWithCustomMessage(c, "更新图书馆成功")
 }
 
-// DeleteLibrary 删除图书馆
+// DeleteLibrary 删除图书馆。
+//
+// 两条通路：管理员可删任意记录；普通访问者只能删自己创建的。
+// 后者不持有 PermissionLibraryDelete，故权限判定放在这里而非中间件里——
+// 中间件只认权限位，认不出「这条是不是你建的」。
 func DeleteLibrary(c *gin.Context) {
 	id, ok := libraryID(c)
 	if !ok {
@@ -230,13 +255,28 @@ func DeleteLibrary(c *gin.Context) {
 	}
 	name := libraryName(existing.Info)
 
+	isAdmin := middlewares.IsAdmin(c)
+
+	if !isAdmin {
+		visitorKey, _ := middlewares.GetVisitorKeyFromContext(c)
+		if !ownedBy(*existing, visitorKey) {
+			utils.ResponseError(c, http.StatusForbidden, "只能删除自己创建的图书馆")
+			return
+		}
+	}
+
 	if err := models.DeleteLibrary(id); err != nil {
 		utils.ResponseError(c, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	// 删除不可恢复，记为 WARN 以便筛查
-	audit.Warnf(c, types.ActionLibraryDelete, "删除图书馆 #%d %s", id, name)
+	// 删除不可恢复，记为 WARN 以便筛查。区分是谁删的：
+	// 创建者自删与管理员删除在排查时是两回事
+	if isAdmin {
+		audit.Warnf(c, types.ActionLibraryDelete, "删除图书馆 #%d %s", id, name)
+	} else {
+		audit.Warnf(c, types.ActionLibraryDelete, "创建者删除自己创建的图书馆 #%d %s", id, name)
+	}
 
 	utils.ResponseSuccessWithCustomMessage(c, "删除图书馆成功")
 }
@@ -421,6 +461,17 @@ func syncFieldStatus(libraryID int, fieldName string, count int) (types.LibraryS
 	}
 
 	return status, nil
+}
+
+// ownedBy 判断某条记录是否由持有该标识的访问者创建。
+//
+// 两个空串不算相等：存量记录的 CreatorKey 为空，而取不到令牌的访问者
+// visitorKey 也是空——直接比会把这些记录的删除权发给每个人。
+//
+// 列表下发 can_delete 与删除时的实际拦截共用这一个判断，
+// 否则两处各写一遍，按钮显示与真正的权限迟早对不上。
+func ownedBy(library types.Library, visitorKey string) bool {
+	return visitorKey != "" && library.CreatorKey != "" && library.CreatorKey == visitorKey
 }
 
 // libraryName 取记录名，供日志留痕；缺失时返回占位

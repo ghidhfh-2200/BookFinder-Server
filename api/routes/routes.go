@@ -120,9 +120,12 @@ func SetupRouter(staticFS fs.FS) (*gin.Engine, error) {
 		middlewares.RateLimitMiddleware(types.CategoryCreate), library.CreateLibrary)
 	libraries.PUT("/:id", middlewares.PermissionMiddleware(utils.PermissionLibraryUpdate),
 		middlewares.RateLimitMiddleware(types.CategoryUpdate), library.UpdateLibrary)
-	// 删除仅管理员可用，不限流
-	libraries.DELETE("/:id", middlewares.PermissionMiddleware(utils.PermissionLibraryDelete),
-		library.DeleteLibrary)
+	// 删除：管理员可删任意记录，普通访问者只能删自己创建的。
+	// 故此处不挂 PermissionLibraryDelete（Users 组没有它，挂上会先被拦掉），
+	// 归属判定在 handler 里做。按 update 类限流：它同样是写操作，
+	// 而不限流的话删除会成为唯一不计配额的写入口。
+	libraries.DELETE("/:id",
+		middlewares.RateLimitMiddleware(types.CategoryUpdate), library.DeleteLibrary)
 	// 状态属于每个信息字段自身，故报告过时按字段进行。
 	// 撤销与报告是同一件事的两个方向，共用一个权限位与同一份配额。
 	libraries.POST("/:id/fields/:field/report-outdated",

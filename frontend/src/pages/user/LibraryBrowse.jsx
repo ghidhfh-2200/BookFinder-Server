@@ -11,6 +11,7 @@ import { useAuth } from '../../hooks/useAuth'
 import { PAGE_STYLE, TABLE_RESERVE, useFillHeight } from '../../hooks/useFillHeight'
 import {
   createLibrary,
+  deleteLibrary,
   reportFieldOutdated,
   revokeFieldOutdated,
   updateLibrary,
@@ -22,7 +23,8 @@ import {
 } from '../../utils/permissions'
 
 // LibraryBrowse 公开浏览页，Users 组与管理员都可访问。
-// Users 组可查、可增改、可按字段报告过时，不能删除。
+// Users 组可查、可增改、可按字段报告过时，删除仅限自己创建的记录
+// （按行由后端下发的 can_delete 决定）。
 export default function LibraryBrowse() {
   const { message } = App.useApp()
   const { hasPermission } = useAuth()
@@ -73,6 +75,18 @@ export default function LibraryBrowse() {
 
     message.success(resp.message)
     setModalOpen(false)
+    reload()
+  }
+
+  // 只能删自己创建的，按钮也只在那些行上出现（后端逐条给 can_delete）。
+  // 真正的拦截在后端：换个浏览器、清了 Cookie 就不再是创建者。
+  const handleDelete = async (id) => {
+    const resp = await deleteLibrary(id)
+    if (resp.code !== 200) {
+      message.error(resp.message)
+      return
+    }
+    message.success(resp.message)
     reload()
   }
 
@@ -160,6 +174,7 @@ export default function LibraryBrowse() {
                 setEditing(record)
                 setModalOpen(true)
               }}
+              onDelete={handleDelete}
               onReportOutdated={(record) => setReportingId(record.id)}
             />
           </Card>

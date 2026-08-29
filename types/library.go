@@ -98,6 +98,16 @@ type Library struct {
 	// STORED 而非 VIRTUAL：全文索引要求列是 STORED 的。
 	// 值由数据库维护，应用侧只读不写，故带 "->" 标签。
 	SearchName string `json:"-" gorm:"->;type:varchar(191) GENERATED ALWAYS AS (JSON_UNQUOTE(JSON_EXTRACT(info,'$.\"FullName\".value'))) STORED"`
+	// CreatorKey 创建者标识，为服务端下发令牌的哈希，不可反推令牌。
+	// 创建者据此删除自己创建的记录（见 handlers/library.DeleteLibrary）。
+	//
+	// 不回给前端：它是身份凭据的哈希，谁都能读列表，泄露它等于泄露
+	// 「这条记录是谁建的」这一关联。前端只需知道「我能不能删」，
+	// 那由后端逐条判定后以 can_delete 下发。
+	//
+	// 建索引：删除时按 (id, creator_key) 定位。
+	// 允许为空——存量记录没有创建者，那些只能由管理员删。
+	CreatorKey string `json:"-" gorm:"size:64;index"`
 	// CreatedAt 建索引：列表页每次都按它倒序分页（见 models.GetLibraries），
 	// 没有索引时每次分页都要排序整张表。
 	CreatedAt time.Time `json:"created_at" gorm:"index"`

@@ -16,7 +16,6 @@ export default function LibraryTable({
   scrollY,
   onChangePage,
   canUpdate = false,
-  canDelete = false,
   canReportOutdated = false,
   onEdit,
   onDelete,
@@ -24,6 +23,14 @@ export default function LibraryTable({
 }) {
   // 窄屏不固定列：两侧各钉一列会把本就不多的可滚动区域挤到几乎无法浏览
   const isMobile = useIsMobile()
+
+  // 删除按钮按行判定，依据后端逐条下发的 can_delete：
+  // 管理员恒为真，普通访问者只对自己创建的记录为真。
+  //
+  // 不看权限位：删除权不再只由角色决定（Users 组没有 library_delete，
+  // 但能删自己创建的），按位判断会让创建者永远看不到按钮。
+  // onDelete 未接则不显示——那是页面还没接删除流程。
+  const rowCanDelete = (record) => Boolean(onDelete) && record.can_delete === true
 
   // 摘要字段成列，其余收进展开行。summaryFields 来自后端（含回落规则），
   // 为空时退回全部字段——注册表尚未加载完时不该先渲染一张只有 ID 的表。
@@ -65,7 +72,9 @@ export default function LibraryTable({
     })),
   ]
 
-  if (canUpdate || canDelete || canReportOutdated) {
+  // 删除按行判定，故只要接了删除流程就留出操作列——
+  // 列存在但某些行没有按钮是正常的（那些不是自己创建的）
+  if (canUpdate || Boolean(onDelete) || canReportOutdated) {
     columns.push({
       title: '操作',
       key: 'action',
@@ -97,7 +106,7 @@ export default function LibraryTable({
             </Tooltip>
           )}
 
-          {canDelete && (
+          {rowCanDelete(record) && (
             <Popconfirm
               title="确认删除这个图书馆？"
               description="删除后无法恢复。"

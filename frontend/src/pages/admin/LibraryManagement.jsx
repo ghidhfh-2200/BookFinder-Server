@@ -18,7 +18,6 @@ import {
 } from '../../api/library'
 import {
   PERMISSION_LIBRARY_CREATE,
-  PERMISSION_LIBRARY_DELETE,
   PERMISSION_LIBRARY_REPORT_OUTDATED,
   PERMISSION_LIBRARY_UPDATE,
 } from '../../utils/permissions'
@@ -163,7 +162,6 @@ export default function LibraryManagement() {
               scrollY={tableHeight}
               onChangePage={changePage}
               canUpdate={hasPermission(PERMISSION_LIBRARY_UPDATE)}
-              canDelete={hasPermission(PERMISSION_LIBRARY_DELETE)}
               canReportOutdated={hasPermission(PERMISSION_LIBRARY_REPORT_OUTDATED)}
               onEdit={(record) => {
                 setEditing(record)
