@@ -18,17 +18,26 @@ var (
 	ErrFieldNotFound = errors.New("该记录不含此字段")
 	// ErrNotWebsiteField 该字段不承担 website 角色，没有验证流程
 	ErrNotWebsiteField = errors.New("只有网站字段需要确认")
-	// ErrAlreadyVerified 该网站已转正，无需再确认
-	ErrAlreadyVerified = errors.New("该网站已确认有效，无需再次确认")
-	// ErrVerifyOutdated 该字段已被标为过时，确认票不该把它拉回有效
-	ErrVerifyOutdated = errors.New("该信息已被标记为过时，无法确认可用")
-	// ErrNothingToVerify 该字段不处于未验证状态，无需确认
-	ErrNothingToVerify = errors.New("该网站无需确认")
-	// ErrAlreadyOutdated 该字段已被标为过时，再报也不会改变什么
-	ErrAlreadyOutdated = errors.New("该信息已被标记为过时")
 	// ErrNoSuchReport 该访问者没有提交过对应的报告，无从撤销
 	ErrNoSuchReport = errors.New("没有提交过该报告")
+	// ErrStatusLocked 当前状态下不受理该动作，原因由状态机给出。
+	//
+	// 具体缘由（已转正、已过时……）随错误信息返回，不为每种情形单列一个
+	// 错误值：那样每加一个状态就要同时改这里和状态机表，而判定本就只有一处。
+	ErrStatusLocked = errors.New("当前状态下无法执行该操作")
 )
+
+// StatusLockedError 状态机拒绝了这个动作。
+// 包装 ErrStatusLocked，故调用方可用 errors.Is 统一识别，也能读到具体原因。
+type StatusLockedError struct {
+	Action types.FieldAction
+	Status types.LibraryStatus
+	Reason string
+}
+
+func (e *StatusLockedError) Error() string { return e.Reason }
+
+func (e *StatusLockedError) Unwrap() error { return ErrStatusLocked }
 
 // FieldReportOutcome 一次报告或撤销的结果，供调用方渲染响应与留痕。
 type FieldReportOutcome struct {
@@ -49,55 +58,18 @@ type FieldReportOutcome struct {
 	Stale bool
 }
 
-// ReportFieldOutdated 记录一次「该字段信息已过时」的报告。
+// ApplyFieldAction 执行一次字段表态：报告过时、撤销过时、确认可用、撤销确认。
 //
-// 报告按人去重，累计到 types.OutdatedReportThreshold 次才把字段置为过时；
-// 未达阈值只记次数。疑似重复（换了令牌但 IP 或指纹吻合）不计数，
-// 返回的 Outcome 里 Duplicate 为真，由调用方决定如何提示与是否累计违规。
+// 四个动作走同一条路，差异全部来自状态机表（types.FieldTransition）：
+// 哪个状态受理哪个动作、达到阈值迁往哪里、跌破阈值是否回落。
+// 这样加一个状态或动作只需改那张表，不必逐个接口补前置检查——
+// 「已转正后撤销确认仍返回成功」那个 bug 正是漏补了一处检查造成的。
 //
-// 已过时的字段不再受理：结论已经落定，再多的票都不会改变什么，
-// 而客户端可能还停在「未过时」的旧页面上——拒绝并带回现状，它才知道该刷新。
-func ReportFieldOutdated(libraryID int, fieldName string, signals dedup.Signals) (FieldReportOutcome, error) {
-	return addReport(libraryID, fieldName, types.ReportOutdated, signals, func(entry types.InfoValue) error {
-		if entry.Status == types.StatusOutdated {
-			return ErrAlreadyOutdated
-		}
-		return nil
-	})
-}
+// signals 用于按人去重，撤销动作只需其中的 ReporterKey。
+func ApplyFieldAction(libraryID int, fieldName string,
+	action types.FieldAction, signals dedup.Signals) (FieldReportOutcome, error) {
 
-// VerifyFieldWebsite 记录一次「该网站可用」的确认。
-// 累计到 types.VerifyReportThreshold 次，字段由未验证转为有效。
-//
-// 只受理 website 角色且当前为未验证的字段。两种拒绝各有理由：
-// 已转正的再确认是无意义的写入（且客户端多半停在旧页面上，
-// 静默接受会让它一直以为还差票）；已过时的更不该被确认票拉回——
-// 那会让 3 票抹掉 5 票的结论。
-func VerifyFieldWebsite(libraryID int, fieldName string, signals dedup.Signals) (FieldReportOutcome, error) {
-	return addReport(libraryID, fieldName, types.ReportVerify, signals, func(entry types.InfoValue) error {
-		if !schema.IsWebsiteField(fieldName) {
-			return ErrNotWebsiteField
-		}
-
-		switch entry.Status {
-		case types.StatusUnverified:
-			return nil
-		case types.StatusGood:
-			return ErrAlreadyVerified
-		case types.StatusOutdated:
-			return ErrVerifyOutdated
-		default:
-			return ErrNothingToVerify
-		}
-	})
-}
-
-// addReport 两种报告共用的主流程：取记录、校验前提、查重、计票、推导状态。
-//
-// guard 是该种报告特有的前置检查，可为 nil。
-func addReport(libraryID int, fieldName string, kind types.ReportKind,
-	signals dedup.Signals, guard func(types.InfoValue) error) (FieldReportOutcome, error) {
-
+	kind := action.Kind()
 	threshold := kind.Threshold()
 
 	library, err := models.GetLibraryByID(libraryID)
@@ -110,29 +82,38 @@ func addReport(libraryID int, fieldName string, kind types.ReportKind,
 		return FieldReportOutcome{}, ErrFieldNotFound
 	}
 
-	if guard != nil {
-		if err := guard(entry); err != nil {
-			// 「这个字段根本没有验证流程」是请求本身不对，不是状态过期：
-			// 标成 stale 会让客户端白刷一次，而刷完那个按钮依然不该存在
-			if errors.Is(err, ErrNotWebsiteField) {
-				return FieldReportOutcome{Threshold: threshold}, err
-			}
-
-			// 状态已变：带回当前状态与票数。客户端多半停在过期页面上，
-			// 只回一句错误的话它无从纠正显示，用户会反复点同一个按钮。
-			// 计数取不到就算了，那只是让进度条少一次刷新，不该盖掉真正的拒绝原因。
-			count, countErr := models.CountFieldReport(libraryID, fieldName, kind)
-			if countErr != nil {
-				count = 0
-			}
-			return FieldReportOutcome{
-				Count:     count,
-				Threshold: threshold,
-				Status:    entry.Status,
-				Stale:     true,
-			}, err
-		}
+	// 角色不符是请求本身不对，不是状态过期：不带 Stale，
+	// 客户端刷新也不会让那个按钮变得合理
+	if action.WebsiteOnly() && !schema.IsWebsiteField(fieldName) {
+		return FieldReportOutcome{Threshold: threshold}, ErrNotWebsiteField
 	}
+
+	rule := types.FieldTransition(action, entry.Status)
+	if !rule.Allowed {
+		// 状态已变而被拒：带回现状，客户端据此就地纠正显示。
+		// 只回一句错误的话它无从知道真实状态，用户会反复点同一个按钮。
+		count, countErr := models.CountFieldReport(libraryID, fieldName, kind)
+		if countErr != nil {
+			count = 0
+		}
+		return FieldReportOutcome{
+			Count:     count,
+			Threshold: threshold,
+			Status:    entry.Status,
+			Stale:     true,
+		}, &StatusLockedError{Action: action, Status: entry.Status, Reason: rule.Reason}
+	}
+
+	if action.IsRevoke() {
+		return revoke(libraryID, fieldName, kind, rule, entry.Status, threshold, signals.ReporterKey)
+	}
+
+	return submit(libraryID, fieldName, kind, rule, entry.Status, threshold, signals)
+}
+
+// submit 投一票：查重、计票、按状态机推导新状态。
+func submit(libraryID int, fieldName string, kind types.ReportKind, rule types.FieldRule,
+	current types.LibraryStatus, threshold int, signals dedup.Signals) (FieldReportOutcome, error) {
 
 	verdict, err := dedup.Check(signals, dedup.Lookup{
 		AlreadyCounted: func() (bool, error) {
@@ -156,7 +137,7 @@ func addReport(libraryID int, fieldName string, kind types.ReportKind,
 		return FieldReportOutcome{
 			Count:     count,
 			Threshold: threshold,
-			Status:    entry.Status,
+			Status:    current,
 			Duplicate: true,
 		}, nil
 	}
@@ -174,7 +155,7 @@ func addReport(libraryID int, fieldName string, kind types.ReportKind,
 		return FieldReportOutcome{}, err
 	}
 
-	status, err := applyStatus(libraryID, fieldName, kind, entry.Status, count)
+	status, err := persistStatus(libraryID, fieldName, rule, current, count, threshold)
 	if err != nil {
 		return FieldReportOutcome{}, err
 	}
@@ -184,62 +165,34 @@ func addReport(libraryID int, fieldName string, kind types.ReportKind,
 		Threshold: threshold,
 		Status:    status,
 		Counted:   true,
-		Reached:   count >= threshold && status != entry.Status,
+		Reached:   status != current,
 	}, nil
 }
 
-// RevokeFieldOutdated 撤销自己的过时报告。
-// 只删自己那一行，次数随之 -1；跌破阈值时状态自动恢复
-// （未验证的网站回到未验证，而非被抹成有效）。
-func RevokeFieldOutdated(libraryID int, fieldName, reporterKey string) (FieldReportOutcome, error) {
-	return revokeReport(libraryID, fieldName, types.ReportOutdated, reporterKey, true)
-}
-
-// RevokeFieldVerify 撤销自己的网站确认。
-//
-// 已转正的字段不会因此退回：转正是既成事实，退回会让
-// 「先攒票转正、再逐个撤票」成为一种破坏手段。故此处只减票数，不动状态。
-func RevokeFieldVerify(libraryID int, fieldName, reporterKey string) (FieldReportOutcome, error) {
-	return revokeReport(libraryID, fieldName, types.ReportVerify, reporterKey, false)
-}
-
-// revokeReport 两种撤销共用的主流程。
-// resync 决定撤销后是否重新推导状态：过时票要，确认票不要（见 RevokeFieldVerify）。
-func revokeReport(libraryID int, fieldName string, kind types.ReportKind,
-	reporterKey string, resync bool) (FieldReportOutcome, error) {
-
-	threshold := kind.Threshold()
-
-	library, err := models.GetLibraryByID(libraryID)
-	if err != nil {
-		return FieldReportOutcome{}, ErrLibraryNotFound
-	}
-	entry, ok := library.Info[fieldName]
-	if !ok {
-		return FieldReportOutcome{}, ErrFieldNotFound
-	}
+// revoke 撤回自己那一票，并按状态机推导新状态。
+// 只删自己那一行，别人的票不受影响。
+func revoke(libraryID int, fieldName string, kind types.ReportKind, rule types.FieldRule,
+	current types.LibraryStatus, threshold int, reporterKey string) (FieldReportOutcome, error) {
 
 	count, removed, err := models.RemoveFieldReport(libraryID, fieldName, kind, reporterKey)
 	if err != nil {
 		return FieldReportOutcome{}, err
 	}
+
 	// 没有可撤销的票，说明客户端页面上的「已投过」是过期的
-	// （票被地址变更清掉了，或换了浏览器身份），故同样带回现状
+	// （票被地址变更清掉了，或换了身份），故同样带回现状
 	if !removed {
 		return FieldReportOutcome{
 			Count:     count,
 			Threshold: threshold,
-			Status:    entry.Status,
+			Status:    current,
 			Stale:     true,
 		}, ErrNoSuchReport
 	}
 
-	status := entry.Status
-	if resync {
-		status, err = applyStatus(libraryID, fieldName, kind, entry.Status, count)
-		if err != nil {
-			return FieldReportOutcome{}, err
-		}
+	status, err := persistStatus(libraryID, fieldName, rule, current, count, threshold)
+	if err != nil {
+		return FieldReportOutcome{}, err
 	}
 
 	return FieldReportOutcome{
@@ -249,35 +202,12 @@ func revokeReport(libraryID int, fieldName string, kind types.ReportKind,
 	}, nil
 }
 
-// applyStatus 按票数推导字段状态并写回，返回写回后的状态。
-//
-// 两种票各自决定不同的迁移方向，故按 kind 分派：
-// 过时票在 good/out-dated（以及 unverified）之间来回，确认票只做 unverified → good。
-func applyStatus(libraryID int, fieldName string, kind types.ReportKind,
-	current types.LibraryStatus, count int) (types.LibraryStatus, error) {
+// persistStatus 按状态机推导目标状态，与当前不同才写库。
+// 相同就不写：那是一次无谓的 UPDATE，也会让「状态变过」的判断失真。
+func persistStatus(libraryID int, fieldName string, rule types.FieldRule,
+	current types.LibraryStatus, count, threshold int) (types.LibraryStatus, error) {
 
-	next := current
-
-	switch kind {
-	case types.ReportOutdated:
-		switch {
-		case count >= types.OutdatedReportThreshold:
-			next = types.StatusOutdated
-		case current == types.StatusUnverified:
-			// 未验证的网站撤销过时报告后回到未验证，不能被抹成 good——
-			// 那等于绕过验证流程白拿一个「有效」
-			next = types.StatusUnverified
-		default:
-			next = types.StatusGood
-		}
-
-	case types.ReportVerify:
-		// 只从未验证转正。已 good 无需再转，已过时不该被确认票拉回
-		if current == types.StatusUnverified && count >= types.VerifyReportThreshold {
-			next = types.StatusGood
-		}
-	}
-
+	next := rule.NextStatus(current, count, threshold)
 	if next == current {
 		return current, nil
 	}

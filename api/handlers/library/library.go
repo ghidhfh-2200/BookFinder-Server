@@ -417,10 +417,8 @@ func reportErrorStatus(err error) int {
 		return http.StatusNotFound
 	case errors.Is(err, services.ErrNotWebsiteField):
 		return http.StatusBadRequest
-	case errors.Is(err, services.ErrNothingToVerify),
-		errors.Is(err, services.ErrAlreadyVerified),
-		errors.Is(err, services.ErrVerifyOutdated),
-		errors.Is(err, services.ErrAlreadyOutdated):
+	// 状态机拒绝：客户端看到的状态过期了，与 400「参数不对」是两回事
+	case errors.Is(err, services.ErrStatusLocked):
 		return http.StatusConflict
 	default:
 		return http.StatusInternalServerError
@@ -484,7 +482,7 @@ func ReportFieldOutdated(c *gin.Context) {
 		return
 	}
 
-	outcome, err := services.ReportFieldOutdated(id, name, signals)
+	outcome, err := services.ApplyFieldAction(id, name, types.ActionReportOutdated, signals)
 	if err != nil {
 		respondReportError(c, outcome, err, err.Error())
 		return
@@ -532,7 +530,8 @@ func RevokeFieldOutdated(c *gin.Context) {
 		return
 	}
 
-	outcome, err := services.RevokeFieldOutdated(id, name, reporterKey)
+	outcome, err := services.ApplyFieldAction(id, name, types.ActionRevokeOutdated,
+		dedup.Signals{ReporterKey: reporterKey})
 	if err != nil {
 		message := err.Error()
 		if errors.Is(err, services.ErrNoSuchReport) {
@@ -562,7 +561,7 @@ func VerifyFieldWebsite(c *gin.Context) {
 		return
 	}
 
-	outcome, err := services.VerifyFieldWebsite(id, name, signals)
+	outcome, err := services.ApplyFieldAction(id, name, types.ActionVerify, signals)
 	if err != nil {
 		respondReportError(c, outcome, err, err.Error())
 		return
@@ -609,7 +608,8 @@ func RevokeFieldVerify(c *gin.Context) {
 		return
 	}
 
-	outcome, err := services.RevokeFieldVerify(id, name, reporterKey)
+	outcome, err := services.ApplyFieldAction(id, name, types.ActionRevokeVerify,
+		dedup.Signals{ReporterKey: reporterKey})
 	if err != nil {
 		message := err.Error()
 		if errors.Is(err, services.ErrNoSuchReport) {
