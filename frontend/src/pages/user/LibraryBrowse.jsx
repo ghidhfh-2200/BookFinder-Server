@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { App, Button, Card, Input, Result, Space } from 'antd'
+import { App, Button, Card, Input, Result } from 'antd'
 import { PlusOutlined, ReloadOutlined } from '@ant-design/icons'
 import PageHeader from '../../components/PageHeader'
 import LibraryTable from '../../components/LibraryTable'
@@ -8,7 +8,9 @@ import ReportOutdatedModal from '../../components/ReportOutdatedModal'
 import { useLibraries } from '../../hooks/useLibraries'
 import { useLibrarySchema } from '../../hooks/useLibrarySchema'
 import { useAuth } from '../../hooks/useAuth'
+import { useIsMobile } from '../../hooks/useIsMobile'
 import { PAGE_STYLE, TABLE_RESERVE, useFillHeight } from '../../hooks/useFillHeight'
+import { SPACE, TOUCH_SIZE } from '../../spacing'
 import {
   createLibrary,
   deleteLibrary,
@@ -30,6 +32,7 @@ import {
 export default function LibraryBrowse() {
   const { message } = App.useApp()
   const { hasPermission } = useAuth()
+  const isMobile = useIsMobile()
   const { libraries, loading, pagination, search, changePage, reload } = useLibraries()
   const {
     fields,
@@ -137,16 +140,28 @@ export default function LibraryBrowse() {
       <PageHeader
         title="图书馆"
         extra={
-          <Space wrap>
+          // 窄屏排成一行：搜索框吃掉剩余宽度，两个按钮收成图标。
+          // 用 flex 而不是 Space wrap——后者一换行就把「新增」甩到单独一行，
+          // 而那一行只有一个按钮，白占一段高度。
+          <div style={{ display: 'flex', gap: SPACE.sm, width: isMobile ? '100%' : 'auto' }}>
             <Input.Search
               allowClear
               placeholder={searchPlaceholder}
-              style={{ width: 240 }}
+              style={isMobile ? { flex: 1, minWidth: 0 } : { width: 240 }}
               onSearch={search}
             />
-            <Button icon={<ReloadOutlined />} onClick={reloadAll}>
-              刷新
+
+            {/* 窄屏只留图标：「刷新」二字在这里可省，图标含义足够明确，
+                省下的宽度留给搜索框 */}
+            <Button
+              icon={<ReloadOutlined />}
+              onClick={reloadAll}
+              style={isMobile ? { width: TOUCH_SIZE, flexShrink: 0 } : undefined}
+              title={isMobile ? '刷新' : undefined}
+            >
+              {isMobile ? null : '刷新'}
             </Button>
+
             {canCreate && (
               <Button
                 type="primary"
@@ -155,11 +170,13 @@ export default function LibraryBrowse() {
                   setEditing(null)
                   setModalOpen(true)
                 }}
+                style={isMobile ? { width: TOUCH_SIZE, flexShrink: 0 } : undefined}
+                title={isMobile ? '新增' : undefined}
               >
-                新增
+                {isMobile ? null : '新增'}
               </Button>
             )}
-          </Space>
+          </div>
         }
       />
 
@@ -179,9 +196,19 @@ export default function LibraryBrowse() {
           />
         </Card>
       ) : (
-        /* 测量可用高度喂给表格：表体内部滚动，页面本身不产生滚动条 */
-        <div ref={fillRef} style={{ flex: 1, minHeight: 0 }}>
-          <Card variant="borderless" styles={{ body: { padding: 0 } }}>
+        /* 测量可用高度喂给表格：表体内部滚动，页面本身不产生滚动条。
+           窄屏是卡片列表，由这一层滚动（卡片不像表格那样自带滚动区） */
+        <div
+          ref={fillRef}
+          style={{ flex: 1, minHeight: 0, overflowY: isMobile ? 'auto' : 'visible' }}
+        >
+          {/* 窄屏不套外层卡片：那层白底圆角包着一堆卡片就是卡片套卡片，
+              边距也多出一层。宽屏的表格仍需要它来收边。 */}
+          <Card
+            variant="borderless"
+            styles={{ body: { padding: 0 } }}
+            style={isMobile ? { background: 'transparent', boxShadow: 'none' } : undefined}
+          >
             <LibraryTable
               libraries={libraries}
               fields={fields}

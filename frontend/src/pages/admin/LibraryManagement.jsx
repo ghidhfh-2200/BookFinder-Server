@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { App, Button, Card, Input, Result, Space } from 'antd'
+import { App, Button, Card, Input, Result } from 'antd'
 import { PlusOutlined, ReloadOutlined } from '@ant-design/icons'
 import PageHeader from '../../components/PageHeader'
 import LibraryTable from '../../components/LibraryTable'
@@ -9,6 +9,8 @@ import { useLibraries } from '../../hooks/useLibraries'
 import { useLibrarySchema } from '../../hooks/useLibrarySchema'
 import { useAuth } from '../../hooks/useAuth'
 import { PAGE_STYLE, TABLE_RESERVE, useFillHeight } from '../../hooks/useFillHeight'
+import { useIsMobile } from '../../hooks/useIsMobile'
+import { SPACE, TOUCH_SIZE } from '../../spacing'
 import {
   createLibrary,
   deleteLibrary,
@@ -40,6 +42,7 @@ export default function LibraryManagement() {
     reload: reloadSchema,
   } = useLibrarySchema()
   const [fillRef, tableHeight] = useFillHeight(TABLE_RESERVE)
+  const isMobile = useIsMobile()
 
   // 两个请求都算 read 类别，限流下可能只有一个被拒，故刷新时一并重取
   const reloadAll = () => {
@@ -129,16 +132,25 @@ export default function LibraryManagement() {
       <PageHeader
         title="图书馆管理"
         extra={
-          <Space wrap>
+          // 与浏览页同一套：窄屏排一行，按钮收成图标。
+          // Space wrap 会把「新增」甩到单独一行，那行只有一个按钮，白占高度。
+          <div style={{ display: 'flex', gap: SPACE.sm, width: isMobile ? '100%' : 'auto' }}>
             <Input.Search
               allowClear
               placeholder={searchPlaceholder}
-              style={{ width: 240 }}
+              style={isMobile ? { flex: 1, minWidth: 0 } : { width: 240 }}
               onSearch={search}
             />
-            <Button icon={<ReloadOutlined />} onClick={reloadAll}>
-              刷新
+
+            <Button
+              icon={<ReloadOutlined />}
+              onClick={reloadAll}
+              style={isMobile ? { width: TOUCH_SIZE, flexShrink: 0 } : undefined}
+              title={isMobile ? '刷新' : undefined}
+            >
+              {isMobile ? null : '刷新'}
             </Button>
+
             {hasPermission(PERMISSION_LIBRARY_CREATE) && (
               <Button
                 type="primary"
@@ -147,11 +159,13 @@ export default function LibraryManagement() {
                   setEditing(null)
                   setModalOpen(true)
                 }}
+                style={isMobile ? { width: TOUCH_SIZE, flexShrink: 0 } : undefined}
+                title={isMobile ? '新增' : undefined}
               >
-                新增
+                {isMobile ? null : '新增'}
               </Button>
             )}
-          </Space>
+          </div>
         }
       />
 
@@ -172,8 +186,16 @@ export default function LibraryManagement() {
         </Card>
       ) : (
         /* 测量可用高度喂给表格：分页器与表头的高度从中扣除 */
-        <div ref={fillRef} style={{ flex: 1, minHeight: 0 }}>
-          <Card variant="borderless" styles={{ body: { padding: 0 } }}>
+        <div
+          ref={fillRef}
+          style={{ flex: 1, minHeight: 0, overflowY: isMobile ? 'auto' : 'visible' }}
+        >
+          {/* 窄屏是卡片列表，不再套一层白底圆角：那等于卡片套卡片，边距多一层 */}
+          <Card
+            variant="borderless"
+            styles={{ body: { padding: 0 } }}
+            style={isMobile ? { background: 'transparent', boxShadow: 'none' } : undefined}
+          >
             <LibraryTable
               libraries={libraries}
               fields={fields}

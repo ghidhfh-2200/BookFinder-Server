@@ -1,6 +1,7 @@
 import { Alert, Button, List, Modal, Space, Tag, Typography } from 'antd'
 import { CheckOutlined, UndoOutlined, WarningOutlined } from '@ant-design/icons'
 import { displayName } from '../hooks/useLibrarySchema'
+import { useModalWidth } from '../hooks/useIsMobile'
 
 // renderPreview 字段当前值的简短预览，帮报告者确认自己选的是哪一条
 function renderPreview(value, type) {
@@ -43,6 +44,10 @@ export default function ReportOutdatedModal({
   onRevokeVerify,
   onCancel,
 }) {
+  // hook 必须在提前 return 之前调用，否则 library 由 null 变为有值时
+  // hook 数量会变，React 报错
+  const modalWidth = useModalWidth()
+
   // 无记录时不渲染内容：关闭动画期间 library 会先变成 null
   if (!library) {
     return <Modal open={open} onCancel={onCancel} footer={null} />
@@ -55,7 +60,7 @@ export default function ReportOutdatedModal({
       onCancel={onCancel}
       footer={<Button onClick={onCancel}>关闭</Button>}
       // 窄屏给足宽度：这里每行都是「字段名 + 当前值 + 操作」，挤在一起反而难点
-      width={560}
+      width={modalWidth}
       styles={{ body: { maxHeight: '60vh', overflowY: 'auto' } }}
     >
       <Alert

@@ -1,13 +1,16 @@
 import { useMemo, useState } from 'react'
-import { Alert, App, Button, Card, Empty, Segmented, Space, Tag } from 'antd'
+import { Alert, App, Button, Card, Empty, Segmented, Tag } from 'antd'
 import { PlusOutlined, ReloadOutlined, SaveOutlined } from '@ant-design/icons'
 import PageHeader from '../../components/PageHeader'
 import Spinner from '../../components/Spinner'
 import FieldTable from '../../components/schema/FieldTable'
+import FieldCardList from '../../components/schema/FieldCardList'
 import JsonEditor from '../../components/schema/JsonEditor'
 import { useLibrarySchema } from '../../hooks/useLibrarySchema'
 import { updateLibrarySchema } from '../../api/librarySchema'
 import { PAGE_STYLE } from '../../hooks/useFillHeight'
+import { useIsMobile } from '../../hooks/useIsMobile'
+import { SPACE, TOUCH_SIZE } from '../../spacing'
 
 // SchemaEditor 字段注册表编辑器。
 // 注册表决定图书馆 Info 里允许出现哪些字段；保存后后端热更新，
@@ -15,6 +18,7 @@ import { PAGE_STYLE } from '../../hooks/useFillHeight'
 export default function SchemaEditor() {
   const { message } = App.useApp()
   const { fields, types, reservedFields, loading, reload } = useLibrarySchema()
+  const isMobile = useIsMobile()
 
   // 草稿仅在有本地改动时存在，否则直接呈现后端的字段，
   // 这样重新加载注册表后无需 effect 同步即可反映最新值
@@ -89,7 +93,8 @@ export default function SchemaEditor() {
       <PageHeader
         title="字段注册表"
         extra={
-          <Space wrap>
+          // 窄屏两个按钮等分一行，不用 Space wrap（那会把「保存」甩到单独一行）
+          <div style={{ display: 'flex', gap: SPACE.sm, width: isMobile ? '100%' : 'auto' }}>
             <Button
               icon={<ReloadOutlined />}
               disabled={saving}
@@ -97,6 +102,7 @@ export default function SchemaEditor() {
                 setEdited(null)
                 reload()
               }}
+              style={isMobile ? { flex: 1, height: TOUCH_SIZE } : undefined}
             >
               重置
             </Button>
@@ -106,10 +112,11 @@ export default function SchemaEditor() {
               loading={saving}
               disabled={!dirty}
               onClick={handleSave}
+              style={isMobile ? { flex: 1, height: TOUCH_SIZE } : undefined}
             >
               保存
             </Button>
-          </Space>
+          </div>
         }
       />
 
@@ -158,8 +165,13 @@ export default function SchemaEditor() {
           variant="borderless"
           style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}
           styles={{
+            // 窄屏去掉卡片自身的左右留白：里面是一列卡片，
+            // 两层留白叠起来会把可用宽度又吃掉一圈
+            header: isMobile ? { padding: `${SPACE.md}px ${SPACE.md}px 0` } : undefined,
             body: {
-              paddingTop: 16,
+              paddingTop: SPACE.lg,
+              paddingLeft: isMobile ? SPACE.md : undefined,
+              paddingRight: isMobile ? SPACE.md : undefined,
               flex: 1,
               minHeight: 0,
               display: 'flex',
@@ -168,9 +180,12 @@ export default function SchemaEditor() {
             },
           }}
           title={
+            // 窄屏让分段控件占满宽度，「新增字段」另起一行铺满：
+            // 两者并排时按钮会被挤到只剩图标
             <Segmented
               value={mode}
               onChange={setMode}
+              block={isMobile}
               options={[
                 { value: 'table', label: '字段列表' },
                 { value: 'json', label: 'JSON 源码' },
@@ -178,7 +193,8 @@ export default function SchemaEditor() {
             />
           }
           extra={
-            mode === 'table' && (
+            mode === 'table' &&
+            !isMobile && (
               <Button type="dashed" icon={<PlusOutlined />} onClick={addField}>
                 新增字段
               </Button>
@@ -187,15 +203,42 @@ export default function SchemaEditor() {
         >
           {mode === 'table' ? (
             draft.length > 0 ? (
-              <FieldTable
-                fields={draft}
-                types={types}
-                reservedFields={reservedFields}
-                savedNames={savedNames}
-                onChange={setDraft}
-                onRemove={removeField}
-                onMove={moveField}
-              />
+              // 窄屏改卡片：这张表每格都是输入控件，八列合计约 830px，
+              // 横滚着改表单没法用。排序也从拖拽换成上移/下移按钮。
+              isMobile ? (
+                <>
+                  <FieldCardList
+                    fields={draft}
+                    types={types}
+                    reservedFields={reservedFields}
+                    savedNames={savedNames}
+                    onChange={setDraft}
+                    onRemove={removeField}
+                    onMove={moveField}
+                  />
+                  {/* 新增按钮移到列表末尾：卡片头部并排放不下它，
+                      而放在末尾也符合「新字段追加在后面」的实际行为 */}
+                  <Button
+                    type="dashed"
+                    block
+                    icon={<PlusOutlined />}
+                    onClick={addField}
+                    style={{ height: TOUCH_SIZE }}
+                  >
+                    新增字段
+                  </Button>
+                </>
+              ) : (
+                <FieldTable
+                  fields={draft}
+                  types={types}
+                  reservedFields={reservedFields}
+                  savedNames={savedNames}
+                  onChange={setDraft}
+                  onRemove={removeField}
+                  onMove={moveField}
+                />
+              )
             ) : (
               <Empty description="注册表为空，至少需要一个字段" />
             )

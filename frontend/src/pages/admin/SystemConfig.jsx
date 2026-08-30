@@ -21,6 +21,8 @@ import Spinner from '../../components/Spinner'
 import { getSystemConfig, updateSystemConfig } from '../../api/admin/systemConfig'
 import { formatTime } from '../../utils/logActions'
 import { PAGE_STYLE } from '../../hooks/useFillHeight'
+import { useIsMobile } from '../../hooks/useIsMobile'
+import { SPACE, TOUCH_SIZE } from '../../spacing'
 
 // DEFAULT_DAILY_AT 清空时刻输入时的回落值，与后端默认值一致
 const DEFAULT_DAILY_AT = '03:30'
@@ -47,6 +49,7 @@ const RESTART_HINT = '（重启后生效）'
 
 export default function SystemConfig() {
   const { message } = App.useApp()
+  const isMobile = useIsMobile()
 
   const [saved, setSaved] = useState(null)
   const [draft, setDraft] = useState(null)
@@ -139,8 +142,14 @@ export default function SystemConfig() {
       <PageHeader
         title="系统管理"
         extra={
-          <Space wrap>
-            <Button icon={<ReloadOutlined />} disabled={saving} onClick={fetchConfig}>
+          // 窄屏两个按钮等分一行，不用 Space wrap（那会把「保存」甩到单独一行）
+          <div style={{ display: 'flex', gap: SPACE.sm, width: isMobile ? '100%' : 'auto' }}>
+            <Button
+              icon={<ReloadOutlined />}
+              disabled={saving}
+              onClick={fetchConfig}
+              style={isMobile ? { flex: 1, height: TOUCH_SIZE } : undefined}
+            >
               重置
             </Button>
             <Button
@@ -149,14 +158,16 @@ export default function SystemConfig() {
               loading={saving}
               disabled={!dirty}
               onClick={handleSave}
+              style={isMobile ? { flex: 1, height: TOUCH_SIZE } : undefined}
             >
               保存
             </Button>
-          </Space>
+          </div>
         }
       />
 
-      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', paddingRight: 4 }}>
+      {/* 右侧留一点空隙，免得滚动条压在卡片边缘上 */}
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', paddingRight: SPACE.xs }}>
         <Space direction="vertical" size={16} style={{ width: '100%', display: 'flex' }}>
           {!draft.maintenance?.enabled && (
             <Alert type="warning" showIcon message="定期清理已关闭，日志表将持续增长" />
@@ -258,20 +269,33 @@ export default function SystemConfig() {
               />
             )}
 
-            <Form layout="vertical">
-              <Row gutter={16}>
-                {NOTIFY_ITEMS.map((item) => (
-                  <Col xs={24} sm={8} key={item.key}>
-                    <Form.Item label={item.label}>
-                      <Switch
-                        checked={draft.notify?.[item.key] ?? false}
-                        onChange={(checked) => patchNotify({ [item.key]: checked })}
-                      />
-                    </Form.Item>
-                  </Col>
-                ))}
-              </Row>
-            </Form>
+            {/* 三个开关排一行，标签在开关右侧。
+                原先用 Form.Item + layout="vertical"，标签压在开关上方，
+                每个又占一整个 Col——窄屏下三个开关就占了三整行，
+                而它们只是三个短词加三个小控件。 */}
+            <div
+              style={{
+                display: 'flex',
+                flexWrap: 'wrap',
+                // 横向间隙取 lg 而非 xl：三项加起来才刚好放进 375px 的屏，
+                // 再宽一点就会折行
+                gap: `${SPACE.md}px ${SPACE.lg}px`,
+                marginBottom: SPACE.lg,
+              }}
+            >
+              {NOTIFY_ITEMS.map((item) => (
+                <div
+                  key={item.key}
+                  style={{ display: 'flex', alignItems: 'center', gap: SPACE.sm }}
+                >
+                  <Switch
+                    checked={draft.notify?.[item.key] ?? false}
+                    onChange={(checked) => patchNotify({ [item.key]: checked })}
+                  />
+                  <Typography.Text>{item.label}</Typography.Text>
+                </div>
+              ))}
+            </div>
 
             <Descriptions
               bordered

@@ -16,8 +16,11 @@ import {
 import { ReloadOutlined, SaveOutlined } from '@ant-design/icons'
 import PageHeader from '../../components/PageHeader'
 import Spinner from '../../components/Spinner'
+import LimitCardList from '../../components/rate/LimitCardList'
 import { getRateRules, updateRateRules } from '../../api/admin/rateRules'
 import { PAGE_STYLE } from '../../hooks/useFillHeight'
+import { useIsMobile } from '../../hooks/useIsMobile'
+import { SPACE, TOUCH_SIZE } from '../../spacing'
 
 // CATEGORY_LABELS 类别的中文名，取值列表由后端给出
 const CATEGORY_LABELS = {
@@ -31,6 +34,7 @@ const CATEGORY_LABELS = {
 
 export default function RateRules() {
   const { message } = App.useApp()
+  const isMobile = useIsMobile()
 
   const [saved, setSaved] = useState(null)
   const [draft, setDraft] = useState(null)
@@ -179,8 +183,14 @@ export default function RateRules() {
       <PageHeader
         title="限流规则"
         extra={
-          <Space wrap>
-            <Button icon={<ReloadOutlined />} disabled={saving} onClick={fetchRules}>
+          // 窄屏两个按钮等分一行，不用 Space wrap（那会把「保存」甩到单独一行）
+          <div style={{ display: 'flex', gap: SPACE.sm, width: isMobile ? '100%' : 'auto' }}>
+            <Button
+              icon={<ReloadOutlined />}
+              disabled={saving}
+              onClick={fetchRules}
+              style={isMobile ? { flex: 1, height: TOUCH_SIZE } : undefined}
+            >
               重置
             </Button>
             <Button
@@ -189,14 +199,16 @@ export default function RateRules() {
               loading={saving}
               disabled={!dirty || invalid}
               onClick={handleSave}
+              style={isMobile ? { flex: 1, height: TOUCH_SIZE } : undefined}
             >
               保存
             </Button>
-          </Space>
+          </div>
         }
       />
 
-      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', paddingRight: 4 }}>
+      {/* 右侧留一点空隙，免得滚动条压在卡片边缘上 */}
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', paddingRight: SPACE.xs }}>
         <Space direction="vertical" size={16} style={{ width: '100%', display: 'flex' }}>
           {!draft.enabled && <Alert type="warning" showIcon message="限流已关闭" />}
 
@@ -221,13 +233,23 @@ export default function RateRules() {
               </Space>
             }
           >
-            <Table
-              size="middle"
-              columns={columns}
-              dataSource={rows}
-              pagination={false}
-              scroll={{ x: 'max-content' }}
-            />
+            {/* 窄屏改分组表单：四列约 650px 且每格都是输入框，横滚改不了 */}
+            {isMobile ? (
+              <LimitCardList
+                categories={categories}
+                limits={draft.limits ?? {}}
+                labels={CATEGORY_LABELS}
+                onPatch={patchLimit}
+              />
+            ) : (
+              <Table
+                size="middle"
+                columns={columns}
+                dataSource={rows}
+                pagination={false}
+                scroll={{ x: 'max-content' }}
+              />
+            )}
           </Card>
 
           <Card variant="borderless" title="见习配额">

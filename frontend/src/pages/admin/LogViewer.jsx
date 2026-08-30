@@ -6,6 +6,8 @@ import LevelTag from '../../components/LevelTag'
 import { getAppLogs, getLogMeta, getOperationLogs } from '../../api/admin/logs'
 import { actionLabel, formatTime } from '../../utils/logActions'
 import { PAGE_STYLE, useFillHeight } from '../../hooks/useFillHeight'
+import { useIsMobile } from '../../hooks/useIsMobile'
+import { SPACE } from '../../spacing'
 
 // LogViewer 管理员日志查看：用户操作日志与应用运行日志。
 // 两者分表存储，查询方式不同，故分标签页呈现。
@@ -20,6 +22,7 @@ export default function LogViewer() {
 
   // 卡片内除表体外还有标签页头、工具条与分页器，故预留更多
   const [fillRef, tableHeight] = useFillHeight(240)
+  const isMobile = useIsMobile()
 
   // 筛选条件。两个标签页的字段不同，切换时一并清空，免得残留值带过去。
   const [level, setLevel] = useState()
@@ -162,45 +165,57 @@ export default function LogViewer() {
           />
         }
       >
-        <div className="toolbar">
-          <div className="toolbar__group">
-            <Select
-              allowClear
-              placeholder="等级"
-              style={{ width: 120 }}
-              value={level}
-              onChange={setLevel}
-              options={levelOptions}
-            />
+        {/* 筛选条排成一行：两个下拉取固定的最小宽度，搜索框吃掉剩余空间。
+            原先三项各自定宽（120+180+220），加起来超出容器就换行，
+            而这一行是 space-between + wrap，换行后第二行只剩一个控件，
+            看着像排版坏了。改成 flex 之后宽度自适应，不再有那种断行。 */}
+        <div
+          style={{
+            display: 'flex',
+            gap: SPACE.sm,
+            marginBottom: SPACE.lg,
+            flexWrap: isMobile ? 'wrap' : 'nowrap',
+          }}
+        >
+          <Select
+            allowClear
+            placeholder="等级"
+            // 窄屏两个下拉各占一半，宽屏给个够放中文标签的固定宽度
+            style={isMobile ? { flex: '1 1 40%', minWidth: 0 } : { width: 110, flexShrink: 0 }}
+            value={level}
+            onChange={setLevel}
+            options={levelOptions}
+          />
 
-            {tab === 'operations' ? (
-              <>
-                <Select
-                  allowClear
-                  showSearch
-                  placeholder="操作类型"
-                  style={{ width: 180 }}
-                  value={action}
-                  onChange={setAction}
-                  options={actionOptions}
-                  optionFilterProp="label"
-                />
-                <Input.Search
-                  allowClear
-                  placeholder="按用户或 IP 精确查询"
-                  style={{ width: 220 }}
-                  onSearch={setUser}
-                />
-              </>
-            ) : (
+          {tab === 'operations' ? (
+            <>
+              <Select
+                allowClear
+                showSearch
+                placeholder="操作类型"
+                style={isMobile ? { flex: '1 1 40%', minWidth: 0 } : { width: 170, flexShrink: 0 }}
+                value={action}
+                onChange={setAction}
+                options={actionOptions}
+                optionFilterProp="label"
+              />
               <Input.Search
                 allowClear
-                placeholder="搜索日志内容"
-                style={{ width: 260 }}
-                onSearch={setKeyword}
+                placeholder="按用户或 IP 精确查询"
+                // 占满剩余宽度：它是最需要空间的一项，
+                // 而定宽会让整行加起来超出容器
+                style={isMobile ? { flex: '1 1 100%' } : { flex: 1, minWidth: 0 }}
+                onSearch={setUser}
               />
-            )}
-          </div>
+            </>
+          ) : (
+            <Input.Search
+              allowClear
+              placeholder="搜索日志内容"
+              style={{ flex: 1, minWidth: 0 }}
+              onSearch={setKeyword}
+            />
+          )}
         </div>
 
         <Table

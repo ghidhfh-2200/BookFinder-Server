@@ -2,12 +2,28 @@ import { useMemo } from 'react'
 import { Button, Descriptions, Popconfirm, Space, Table, Tooltip, Typography } from 'antd'
 import { DeleteOutlined, EditOutlined, WarningOutlined } from '@ant-design/icons'
 import InfoFieldCell from './InfoFieldCell'
+import LibraryCardList from './LibraryCardList'
 import { displayName } from '../hooks/useLibrarySchema'
 import { useIsMobile } from '../hooks/useIsMobile'
 
 // LibraryTable 图书馆列表。
 // 列由字段注册表推导，前端不硬编码字段名；各操作按钮按传入的权限开关显示，真正的拦截在后端。
-export default function LibraryTable({
+//
+// 窄屏改用卡片列表（LibraryCardList）：字段一多，定宽的列会把表格拉到
+// 六七百像素宽，横滚表格在触屏上难用。切换在这里做而不在各页面里做，
+// 否则两个调用页各写一遍判断，日后必然分叉。
+export default function LibraryTable(props) {
+  const isMobile = useIsMobile()
+
+  if (isMobile) {
+    return <LibraryCardList {...props} />
+  }
+
+  return <DesktopTable {...props} />
+}
+
+// DesktopTable 宽屏形态：表格。信息密度是它在宽屏下的优势。
+function DesktopTable({
   libraries,
   fields,
   summaryFields = [],
@@ -21,8 +37,6 @@ export default function LibraryTable({
   onDelete,
   onReportOutdated,
 }) {
-  // 窄屏不固定列：两侧各钉一列会把本就不多的可滚动区域挤到几乎无法浏览
-  const isMobile = useIsMobile()
 
   // 删除按钮按行判定，依据后端逐条下发的 can_delete：
   // 管理员恒为真，普通访问者只对自己创建的记录为真。
@@ -59,14 +73,12 @@ export default function LibraryTable({
       title: 'ID',
       dataIndex: 'id',
       width: 64,
-      fixed: isMobile ? undefined : 'left',
+      fixed: 'left',
       render: (id) => <Typography.Text type="secondary">{id}</Typography.Text>,
     },
     ...columnFields.map((field) => ({
       title: displayName(field),
       key: field.name,
-      // 窄屏给每列定宽，靠横向滚动浏览；不定宽的话多列平分会窄到读不了
-      width: isMobile ? 150 : undefined,
       ellipsis: true,
       render: (_, record) => renderCell(field, record),
     })),
@@ -78,8 +90,8 @@ export default function LibraryTable({
     columns.push({
       title: '操作',
       key: 'action',
-      width: isMobile ? 120 : 172,
-      fixed: isMobile ? undefined : 'right',
+      width: 172,
+      fixed: 'right',
       render: (_, record) => (
         <Space size={2}>
           {/* 每行一个报告入口，字段在弹窗里选。原先每个单元格挂一个图标，
@@ -149,7 +161,7 @@ export default function LibraryTable({
               ),
               // 展开列钉在左侧，与 ID 同侧：它是「这一行的操作」，
               // 跟着内容横向滚走会找不到
-              fixed: isMobile ? undefined : 'left',
+              fixed: 'left',
             }
           : undefined
       }

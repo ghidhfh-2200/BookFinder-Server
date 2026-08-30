@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useState } from 'react'
-import { App, Button, Card, Popconfirm, Space, Table, Tag, Tooltip, Typography } from 'antd'
+import { App, Button, Card, Popconfirm, Table, Tag, Tooltip, Typography } from 'antd'
 import { MailOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons'
 import PageHeader from '../../components/PageHeader'
 import AppealDrawer from '../../components/AppealDrawer'
 import BanModal from '../../components/BanModal'
 import BanIdentTags from '../../components/BanIdentTags'
+import BanCardList from '../../components/BanCardList'
 import { banIP, getBans, unbanSubject } from '../../api/admin/ban'
 import { PAGE_STYLE, TABLE_RESERVE, useFillHeight } from '../../hooks/useFillHeight'
+import { useIsMobile } from '../../hooks/useIsMobile'
+import { SPACE, TOUCH_SIZE } from '../../spacing'
 
 // BanManagement 封禁管理。
 //
@@ -16,6 +19,7 @@ import { PAGE_STYLE, TABLE_RESERVE, useFillHeight } from '../../hooks/useFillHei
 export default function BanManagement() {
   const { message } = App.useApp()
   const [fillRef, tableHeight] = useFillHeight(TABLE_RESERVE)
+  const isMobile = useIsMobile()
   const [bans, setBans] = useState([])
   // appealIP 非空时打开该 IP 的申诉抽屉
   const [appealIP, setAppealIP] = useState(null)
@@ -164,30 +168,54 @@ export default function BanManagement() {
       <PageHeader
         title="封禁管理"
         extra={
-          <Space wrap>
-            <Button icon={<ReloadOutlined />} onClick={fetchBans}>
+          // 窄屏两个按钮等分一行，不用 Space wrap（那会把第二个甩到下一行）
+          <div style={{ display: 'flex', gap: SPACE.sm, width: isMobile ? '100%' : 'auto' }}>
+            <Button
+              icon={<ReloadOutlined />}
+              onClick={fetchBans}
+              style={isMobile ? { flex: 1, height: TOUCH_SIZE } : undefined}
+            >
               刷新
             </Button>
-            <Button type="primary" icon={<PlusOutlined />} onClick={() => setBanOpen(true)}>
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              onClick={() => setBanOpen(true)}
+              style={isMobile ? { flex: 1, height: TOUCH_SIZE } : undefined}
+            >
               封禁 IP
             </Button>
-          </Space>
+          </div>
         }
       />
 
-      <div ref={fillRef} style={{ flex: 1, minHeight: 0 }}>
-        <Card variant="borderless" styles={{ body: { padding: 0 } }}>
-          <Table
-            rowKey="id"
-            size="middle"
+      <div
+        ref={fillRef}
+        style={{ flex: 1, minHeight: 0, overflowY: isMobile ? 'auto' : 'visible' }}
+      >
+        {/* 窄屏改卡片：七列合计约 990px，横滚近三屏没法用。
+            卡片列表自己纵向排布，不套外层白底——那是卡片套卡片 */}
+        {isMobile ? (
+          <BanCardList
+            bans={bans}
             loading={loading}
-            columns={banColumns}
-            dataSource={bans}
-            scroll={{ x: 'max-content', y: tableHeight }}
-            pagination={{ showTotal: (total) => `共 ${total} 条` }}
-            locale={{ emptyText: '暂无封禁记录' }}
+            onUnban={handleUnban}
+            onOpenAppeal={setAppealIP}
           />
-        </Card>
+        ) : (
+          <Card variant="borderless" styles={{ body: { padding: 0 } }}>
+            <Table
+              rowKey="id"
+              size="middle"
+              loading={loading}
+              columns={banColumns}
+              dataSource={bans}
+              scroll={{ x: 'max-content', y: tableHeight }}
+              pagination={{ showTotal: (total) => `共 ${total} 条` }}
+              locale={{ emptyText: '暂无封禁记录' }}
+            />
+          </Card>
+        )}
       </div>
 
       <BanModal open={banOpen} onClose={() => setBanOpen(false)} onSubmit={handleBan} />

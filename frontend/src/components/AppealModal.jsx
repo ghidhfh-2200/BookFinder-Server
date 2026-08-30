@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Alert, App, Input, Modal, Space, Typography } from 'antd'
 import { submitAppeal } from '../api/appeal'
+import { useModalWidth } from '../hooks/useIsMobile'
 
 // MAX_LENGTH 与后端 types.MaxAppealMessageLength 保持一致
 const MAX_LENGTH = 500
@@ -11,6 +12,7 @@ export default function AppealModal({ open, quota, onCancel, onSubmitted }) {
   const { message: toast } = App.useApp()
   const [text, setText] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const modalWidth = useModalWidth(520)
 
   const remaining = quota?.remaining ?? 0
 
@@ -44,7 +46,7 @@ export default function AppealModal({ open, quota, onCancel, onSubmitted }) {
       confirmLoading={submitting}
       okText="提交"
       cancelText="取消"
-      width={520}
+      width={modalWidth}
       destroyOnHidden
     >
       <Space direction="vertical" size={12} style={{ width: '100%', marginTop: 16 }}>

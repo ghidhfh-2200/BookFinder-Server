@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { Form, Input, InputNumber, Modal, Select, Space, Switch } from 'antd'
 import { displayName, emptyValueFor } from '../hooks/useLibrarySchema'
+import { useModalWidth } from '../hooks/useIsMobile'
 
 // STATUS_LABELS 状态的中文名，取值本身来自后端
 const STATUS_LABELS = {
@@ -124,6 +125,7 @@ export default function LibraryFormModal({
   onCancel,
 }) {
   const [form] = Form.useForm()
+  const modalWidth = useModalWidth()
 
   useEffect(() => {
     if (!open) return
@@ -188,7 +190,7 @@ export default function LibraryFormModal({
       confirmLoading={submitting}
       okText="保存"
       cancelText="取消"
-      width={560}
+      width={modalWidth}
       destroyOnHidden
     >
       <Form form={form} layout="vertical" style={{ marginTop: 20 }}>

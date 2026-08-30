@@ -2,53 +2,25 @@ import { useState } from 'react'
 import { Button, Layout, Menu, Tag, Tooltip, Typography } from 'antd'
 import {
   BookOutlined,
-  DashboardOutlined,
-  FileTextOutlined,
   LogoutOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
-  ProfileOutlined,
-  SettingOutlined,
-  StopOutlined,
-  UserOutlined,
 } from '@ant-design/icons'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
-import { PERMISSION_IP_BAN_MANAGEMENT, PERMISSION_SYSTEM_MANAGEMENT } from '../utils/permissions'
+import { useNavItems } from '../hooks/useNavItems'
 import { BORDER_COLOR, PRIMARY_COLOR, SURFACE_BG, TEXT_SECONDARY } from '../theme'
 
 // AppSider 侧边栏导航。全站导航集中在此。
 // 管理员的「图书馆管理」已包含浏览能力，故不再显示公开浏览入口。
 export default function AppSider() {
-  const { isAdmin, identity, hasPermission, logout } = useAuth()
+  const { isAdmin, identity, logout } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const [collapsed, setCollapsed] = useState(false)
 
-  const items = []
-
-  if (isAdmin) {
-    if (hasPermission(PERMISSION_SYSTEM_MANAGEMENT)) {
-      items.push({ key: '/admin/dashboard', icon: <DashboardOutlined />, label: '监控面板' })
-    }
-    items.push({ key: '/admin/libraries', icon: <BookOutlined />, label: '图书馆管理' })
-    if (hasPermission(PERMISSION_SYSTEM_MANAGEMENT)) {
-      items.push({ key: '/admin/schema', icon: <ProfileOutlined />, label: '字段注册表' })
-    }
-    if (hasPermission(PERMISSION_IP_BAN_MANAGEMENT)) {
-      items.push({ key: '/admin/bans', icon: <StopOutlined />, label: '封禁管理' })
-    }
-    if (hasPermission(PERMISSION_SYSTEM_MANAGEMENT)) {
-      items.push(
-        { key: '/admin/rate-rules', icon: <DashboardOutlined />, label: '限流规则' },
-        { key: '/admin/system', icon: <SettingOutlined />, label: '系统管理' },
-        { key: '/admin/logs', icon: <FileTextOutlined />, label: '日志' },
-      )
-    }
-    items.push({ key: '/admin/profile', icon: <UserOutlined />, label: '账户' })
-  } else {
-    items.push({ key: '/libraries', icon: <BookOutlined />, label: '图书馆' })
-  }
+  // 导航项与移动端抽屉共用，见 useNavItems
+  const items = useNavItems()
 
   const handleLogout = async () => {
     await logout()

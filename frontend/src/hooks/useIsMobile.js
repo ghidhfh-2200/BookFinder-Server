@@ -24,3 +24,11 @@ export function useIsMobile(breakpoint = MOBILE_BREAKPOINT) {
 
   return isMobile
 }
+
+// MODAL_WIDTH 弹窗宽度。窄屏用百分比而非固定像素：
+// 560px 宽过 iPhone SE 的 375px，antd 虽会自动收窄，但左右留白会把
+// 内容挤成很窄的一条。留 4% 的边距，其余给内容。
+export function useModalWidth(desktop = 560) {
+  const isMobile = useIsMobile()
+  return isMobile ? '96vw' : desktop
+}
