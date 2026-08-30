@@ -35,15 +35,20 @@ function renderValue(value, type) {
 export default function InfoFieldCell({ entry, type, report }) {
   const status = entry?.status
   const outdated = status === 'out-dated'
+  // 未验证的网站：地址填了但还没人确认能打开，读到它的人该知道这一点
+  const unverified = status === 'unverified'
 
   const count = report?.count ?? 0
   const threshold = report?.threshold ?? 0
+  const verifyCount = report?.verify_count ?? 0
+  const verifyThreshold = report?.verify_threshold ?? 0
 
   return (
     <Space size={6} align="center" wrap={false}>
       {renderValue(entry?.value, type)}
 
-      {outdated && <StatusTag status={status} size="small" />}
+      {/* good 不出标签：一整列绿色的「有效」只是噪音，异常才值得标注 */}
+      {(outdated || unverified) && <StatusTag status={status} size="small" />}
 
       {/* 未达阈值时显示进度：这条信息已有人质疑，读到它的人应当知道。
           纯展示，不可点击。 */}
@@ -51,6 +56,16 @@ export default function InfoFieldCell({ entry, type, report }) {
         <Tooltip title={`已有 ${count} 人报告过时，满 ${threshold} 次将标为过时`}>
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
             {count}/{threshold}
+          </Typography.Text>
+        </Tooltip>
+      )}
+
+      {/* 转正进度只在未验证时有意义，且与过时进度分开显示：
+          两者是不同的票，混成一个数字会让人不知道自己在看哪一个 */}
+      {unverified && verifyThreshold > 0 && (
+        <Tooltip title={`已有 ${verifyCount} 人确认可用，满 ${verifyThreshold} 次转为有效`}>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            已确认 {verifyCount}/{verifyThreshold}
           </Typography.Text>
         </Tooltip>
       )}

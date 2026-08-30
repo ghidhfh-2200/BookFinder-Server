@@ -49,6 +49,11 @@ const (
 	// ActionFieldReportRejected 报告被判为疑似重复，未计数
 	ActionFieldReportRejected = "field_report_rejected"
 
+	// ActionFieldVerify 确认某字段的网站可用
+	ActionFieldVerify = "field_verify"
+	// ActionFieldVerifyRevoke 撤销自己的网站确认
+	ActionFieldVerifyRevoke = "field_verify_revoke"
+
 	// ActionSchemaUpdate 变更字段注册表
 	ActionSchemaUpdate = "schema_update"
 

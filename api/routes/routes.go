@@ -135,6 +135,16 @@ func SetupRouter(staticFS fs.FS) (*gin.Engine, error) {
 		middlewares.PermissionMiddleware(utils.PermissionLibraryReportOutdated),
 		middlewares.RateLimitMiddleware(types.CategoryReport), library.RevokeFieldOutdated)
 
+	// 确认网站可用：未验证的网站攒够 types.VerifyReportThreshold 次确认即转正。
+	// 与报告过时同权限、同配额——两者都是「对某字段的一次表态」，
+	// 分开给配额只会让人先用满一种再用另一种。
+	libraries.POST("/:id/fields/:field/verify",
+		middlewares.PermissionMiddleware(utils.PermissionLibraryReportOutdated),
+		middlewares.RateLimitMiddleware(types.CategoryReport), library.VerifyFieldWebsite)
+	libraries.DELETE("/:id/fields/:field/verify",
+		middlewares.PermissionMiddleware(utils.PermissionLibraryReportOutdated),
+		middlewares.RateLimitMiddleware(types.CategoryReport), library.RevokeFieldVerify)
+
 	// ========== 字段注册表 API ==========
 	// 读取对所有访问者开放：前端要据此动态渲染表格与表单，不能硬编码字段。
 	api.GET("/library-schema", middlewares.PermissionMiddleware(utils.PermissionLibraryRead),

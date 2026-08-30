@@ -2,6 +2,60 @@ import { useEffect } from 'react'
 import { Form, Input, InputNumber, Modal, Select, Space, Switch } from 'antd'
 import { displayName, emptyValueFor } from '../hooks/useLibrarySchema'
 
+// STATUS_LABELS 状态的中文名，取值本身来自后端
+const STATUS_LABELS = {
+  good: '有效',
+  'out-dated': '已过时',
+  unverified: '未验证',
+}
+
+// websiteRule 网站字段的校验规则，与后端 checker.ValidateWebsiteURL 同一套判据。
+//
+// 前端先校验只为即时反馈，真正的拦截在后端——两处规则若有出入，
+// 表现是「这里通过了、提交后被拒」，故此处刻意只做同样的四项检查。
+// 空值放行：网站不是必填项。
+const websiteRule = {
+  validator: (_rule, value) => {
+    const text = (value ?? '').trim()
+    if (text === '') return Promise.resolve()
+
+    let parsed
+    try {
+      parsed = new URL(text)
+    } catch {
+      return Promise.reject(new Error('请输入完整网址，以 http:// 或 https:// 开头'))
+    }
+
+    const scheme = parsed.protocol.replace(':', '').toLowerCase()
+    if (scheme !== 'http' && scheme !== 'https') {
+      return Promise.reject(new Error(`不支持 ${scheme} 协议，只允许 http 与 https`))
+    }
+    if (!parsed.hostname) {
+      return Promise.reject(new Error('缺少域名'))
+    }
+    if (parsed.hostname !== 'localhost' && !parsed.hostname.includes('.')) {
+      return Promise.reject(new Error('域名不完整'))
+    }
+
+    return Promise.resolve()
+  },
+}
+
+// fieldRules 该字段的校验规则。必填与网站格式可以同时生效，故按需拼接。
+function fieldRules(field) {
+  const rules = []
+
+  if (field.required && field.type === 'string') {
+    rules.push({ required: true, whitespace: true, message: `请输入${displayName(field)}` })
+  }
+  // 按角色识别网站字段，不硬编码字段名——角色由后端下发（见 useLibrarySchema）
+  if (field.role === 'website') {
+    rules.push(websiteRule)
+  }
+
+  return rules.length > 0 ? rules : undefined
+}
+
 // fieldInput 按声明类型给出对应的输入控件
 function fieldInput(field) {
   switch (field.type) {
@@ -118,9 +172,11 @@ export default function LibraryFormModal({
     onOk({ info })
   }
 
+  // 状态取值来自后端注册表接口，这里只把它翻成人话；
+  // 未收录的取值直接显示原文，免得新状态被默默标成「有效」
   const statusOptions = statuses.map((value) => ({
     value,
-    label: value === 'out-dated' ? '已过时' : '有效',
+    label: STATUS_LABELS[value] ?? value,
   }))
 
   return (
@@ -143,11 +199,7 @@ export default function LibraryFormModal({
                 name={field.name}
                 noStyle
                 valuePropName={field.type === 'bool' ? 'checked' : 'value'}
-                rules={
-                  field.required && field.type === 'string'
-                    ? [{ required: true, whitespace: true, message: `请输入${displayName(field)}` }]
-                    : undefined
-                }
+                rules={fieldRules(field)}
               >
                 {fieldInput(field)}
               </Form.Item>

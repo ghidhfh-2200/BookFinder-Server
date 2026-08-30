@@ -14,7 +14,9 @@ import {
   deleteLibrary,
   reportFieldOutdated,
   revokeFieldOutdated,
+  revokeFieldVerify,
   updateLibrary,
+  verifyFieldWebsite,
 } from '../../api/library'
 import {
   PERMISSION_LIBRARY_CREATE,
@@ -70,6 +72,12 @@ export default function LibraryBrowse() {
 
     if (resp.code !== 200) {
       message.error(resp.message)
+      // 记录已不在了（别人删了，而这个页面还开着编辑框）：关掉弹窗并刷新，
+      // 留着一个编辑不存在记录的表单只会让人重复提交
+      if (resp.code === 404) {
+        setModalOpen(false)
+        reload()
+      }
       return
     }
 
@@ -84,6 +92,11 @@ export default function LibraryBrowse() {
     const resp = await deleteLibrary(id)
     if (resp.code !== 200) {
       message.error(resp.message)
+      // 记录已被别人删掉（404），或删除权已不成立（403）：
+      // 页面上的这一行是过期的，刷新掉，免得用户对着它反复点
+      if (resp.code === 404 || resp.code === 403) {
+        reload()
+      }
       return
     }
     message.success(resp.message)
@@ -96,6 +109,15 @@ export default function LibraryBrowse() {
 
     // 疑似重复不是失败，而是判定为同一人已报告过、这次未计数
     if (resp.data?.duplicate) {
+      message.warning(resp.message)
+      reload()
+      return
+    }
+
+    // 状态已变而被拒：页面上的状态是过期的（别人先改了，而这里没刷新）。
+    // 必须 reload——否则用户看到一句错误，而界面还显示着旧状态与旧进度，
+    // 会反复点同一个按钮。
+    if (resp.data?.stale) {
       message.warning(resp.message)
       reload()
       return
@@ -196,6 +218,8 @@ export default function LibraryBrowse() {
         fields={fields}
         onReport={(field) => handleFieldStatus(reportFieldOutdated(reportingId, field))}
         onRevoke={(field) => handleFieldStatus(revokeFieldOutdated(reportingId, field))}
+        onVerify={(field) => handleFieldStatus(verifyFieldWebsite(reportingId, field))}
+        onRevokeVerify={(field) => handleFieldStatus(revokeFieldVerify(reportingId, field))}
         onCancel={() => setReportingId(null)}
       />
     </div>

@@ -62,6 +62,7 @@ func GetSchema(c *gin.Context) {
 		Statuses: []string{
 			string(types.StatusGood),
 			string(types.StatusOutdated),
+			string(types.StatusUnverified),
 		},
 	})
 }

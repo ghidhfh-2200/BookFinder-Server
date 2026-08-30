@@ -162,6 +162,28 @@ func SearchNameField() string {
 	return types.SearchNameFieldName
 }
 
+// WebsiteFields 返回承担 website 角色的字段名。
+// 通常只有一个，但按切片返回：注册表理论上可以声明多个同角色字段。
+func WebsiteFields() []string {
+	mu.RLock()
+	defer mu.RUnlock()
+
+	var names []string
+	for _, field := range fields {
+		if field.Role == types.RoleWebsite {
+			names = append(names, field.Name)
+		}
+	}
+	return names
+}
+
+// IsWebsiteField 判断某字段是否承担 website 角色。
+// 经 Field 取声明，故自身不持锁——不可在已持锁的路径里调用。
+func IsWebsiteField(name string) bool {
+	field, ok := Field(name)
+	return ok && field.Role == types.RoleWebsite
+}
+
 // RoleFields 返回角色到字段名的映射，供客户端按角色定位字段而不硬编码键名。
 // 只列注册表里实际存在的内置字段。
 func RoleFields() map[string]string {

@@ -16,12 +16,17 @@ const (
 	StatusGood LibraryStatus = "good"
 	// StatusOutdated 该字段的信息已被报告为过时
 	StatusOutdated LibraryStatus = "out-dated"
+	// StatusUnverified 网站地址填入后尚未被他人确认可用。
+	//
+	// 只有 website 角色的字段会进入这个状态：填一个地址进来是零成本的，
+	// 而读到它的人会照着点开。攒够 VerifyReportThreshold 次确认才转为 good。
+	StatusUnverified LibraryStatus = "unverified"
 )
 
 // IsValid 判断状态取值是否受支持
 func (s LibraryStatus) IsValid() bool {
 	switch s {
-	case StatusGood, StatusOutdated:
+	case StatusGood, StatusOutdated, StatusUnverified:
 		return true
 	default:
 		return false

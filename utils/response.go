@@ -62,6 +62,19 @@ func ResponseError(c *gin.Context, code int, message string) {
 	})
 }
 
+// ResponseErrorWithData 错误响应，附带数据。
+//
+// 用于「操作被拒，但客户端需要知道现状」的场合：页面上的状态可能已经过期
+// （别人先改了，而这个页面没刷新），只回一句错误的话，用户点一次失败一次，
+// 却始终看不到为什么。附上服务端的当前状态，前端据此就地纠正显示。
+func ResponseErrorWithData(c *gin.Context, code int, message string, data any) {
+	c.JSON(http.StatusOK, Response{
+		Code:    code,
+		Message: message,
+		Data:    data,
+	})
+}
+
 // ResponseBanned 封禁响应。
 //
 // 前端据 data.banned 切到封禁页，故所有「因封禁被拒」的出口都必须走此函数：
