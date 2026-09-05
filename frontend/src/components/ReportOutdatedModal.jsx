@@ -19,13 +19,16 @@ function renderPreview(value, type) {
   }
 
   return (
-    <Typography.Text ellipsis={{ tooltip: text }} style={{ maxWidth: 320 }}>
+    <Typography.Text ellipsis={{ tooltip: text }} style={{ maxWidth: '100%' }}>
       {text}
     </Typography.Text>
   )
 }
 
-// ReportOutdatedModal 逐字段报告信息过时，并确认未验证的网站。
+// ReportOutdatedModal 逐字段反馈信息状态：报告过时，或确认未验证的网站。
+//
+// 叫「反馈」而不是「报告过时」：这里同时承担报告过时与确认可用两类动作，
+// 后者是给未验证网站转正投票，只提「过时」会让人以为确认功能不在里面。
 //
 // 报告入口从单元格挪到这里：原先每个单元格都挂一个图标按钮，在移动端与相邻
 // 元素挤在一起，很容易误触——而误触的后果是提交一次真实的报告，且报告按人
@@ -56,7 +59,7 @@ export default function ReportOutdatedModal({
   return (
     <Modal
       open={open}
-      title="报告信息过时"
+      title="信息反馈"
       onCancel={onCancel}
       footer={<Button onClick={onCancel}>关闭</Button>}
       // 窄屏给足宽度：这里每行都是「字段名 + 当前值 + 操作」，挤在一起反而难点
@@ -67,7 +70,7 @@ export default function ReportOutdatedModal({
         type="info"
         showIcon
         style={{ marginBottom: 12 }}
-        message="选择信息已经过时的字段。同一字段被足够多人报告后会自动标记。未验证的网站可在此确认可用。"
+        message="信息有变动？选择已过时的字段提交报告，未验证的网站也可在此确认可用。同一字段被足够多人反馈后会自动更新状态。"
       />
 
       <List
@@ -132,41 +135,46 @@ export default function ReportOutdatedModal({
 
           return (
             <List.Item key={field.name} actions={actions}>
-              <List.Item.Meta
-                title={
-                  <Space size={6} wrap>
-                    <Typography.Text>{displayName(field)}</Typography.Text>
+              {/* flex:1 + minWidth:0 让内容区随可用宽度收缩：
+                  网址这类无空格长串否则会把行撑到比弹窗还宽，
+                  文字钻到右侧按钮底下（预览本身会截断并带完整内容的 Tooltip） */}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <List.Item.Meta
+                  title={
+                    <Space size={6} wrap>
+                      <Typography.Text>{displayName(field)}</Typography.Text>
 
-                    {unverified && (
-                      <Tag bordered={false} color="default">
-                        未验证
-                      </Tag>
-                    )}
+                      {unverified && (
+                        <Tag bordered={false} color="default">
+                          未验证
+                        </Tag>
+                      )}
 
-                    {/* 转正进度：让确认的人看到自己那一票已计入 */}
-                    {unverified && verifyThreshold > 0 && (
-                      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                        已确认 {verifyCount}/{verifyThreshold}
-                      </Typography.Text>
-                    )}
+                      {/* 转正进度：让确认的人看到自己那一票已计入 */}
+                      {unverified && verifyThreshold > 0 && (
+                        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                          已确认 {verifyCount}/{verifyThreshold}
+                        </Typography.Text>
+                      )}
 
-                    {/* 未达阈值时显示进度，让报告的人看到自己那一票已计入 */}
-                    {!outdated && count > 0 && (
-                      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                        过时 {count}/{threshold}
-                      </Typography.Text>
-                    )}
+                      {/* 未达阈值时显示进度，让报告的人看到自己那一票已计入 */}
+                      {!outdated && count > 0 && (
+                        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                          过时 {count}/{threshold}
+                        </Typography.Text>
+                      )}
 
-                    {/* 同来源已报过但不是自己提交的：提前告知，免得点完才知道没计数 */}
-                    {!outdated && !reported && suspected && (
-                      <Typography.Text type="warning" style={{ fontSize: 12 }}>
-                        疑似重复，可能不计数
-                      </Typography.Text>
-                    )}
-                  </Space>
-                }
-                description={renderPreview(entry?.value, field.type)}
-              />
+                      {/* 同来源已报过但不是自己提交的：提前告知，免得点完才知道没计数 */}
+                      {!outdated && !reported && suspected && (
+                        <Typography.Text type="warning" style={{ fontSize: 12 }}>
+                          疑似重复，可能不计数
+                        </Typography.Text>
+                      )}
+                    </Space>
+                  }
+                  description={renderPreview(entry?.value, field.type)}
+                />
+              </div>
             </List.Item>
           )
         }}

@@ -97,7 +97,7 @@ function DesktopTable({
           {/* 每行一个报告入口，字段在弹窗里选。原先每个单元格挂一个图标，
               移动端极易误触，而误触会提交一次真实的报告。 */}
           {canReportOutdated && (
-            <Tooltip title="报告信息过时">
+            <Tooltip title="信息反馈">
               <Button
                 type="text"
                 size="small"

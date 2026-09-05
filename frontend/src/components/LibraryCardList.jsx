@@ -127,7 +127,7 @@ export default function LibraryCardList({
                   onClick={() => onReportOutdated(record)}
                   style={{ height: TOUCH_SIZE, flex: 1 }}
                 >
-                  报告
+                  反馈
                 </Button>
               )}
 

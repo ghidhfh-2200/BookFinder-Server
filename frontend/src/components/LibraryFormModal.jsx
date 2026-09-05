@@ -113,7 +113,7 @@ function formatValue(field, value) {
 
 // LibraryFormModal 图书馆新增/编辑表单。
 // 表单项由字段注册表推导；showStatus 控制是否允许直接改每个字段的状态，
-// Users 组只能通过单元格上的「报告过时」变更状态。
+// Users 组只能通过「信息反馈」入口变更状态。
 export default function LibraryFormModal({
   open,
   library,
